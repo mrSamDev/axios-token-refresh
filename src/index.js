@@ -15,19 +15,22 @@
  * @param {Function} options.getAuthToken - Function that returns the current auth token
  * @param {Function} [options.shouldRefreshToken] - Function that determines if token refresh should be triggered
  * @param {Function} [options.onStatusChange] - Callback for token refresh status updates
+ * @param {Function} [options.authHeaderFormatter] - Format the authorization header value
+ * @param {number} [options.refreshTimeout] - Timeout for token refresh operation in milliseconds
  * @returns {Function} Axios plugin function
  */
 export function createRefreshTokenPlugin({
   refreshTokenFn,
   getAuthToken,
-  shouldRefreshToken = (error) => {
-    // Default check for when to refresh token
+  shouldRefreshToken = (error, originalRequest) => {
     const statusCode = error?.response ? error.response.status : "Network Error";
-    return (statusCode === 401 || statusCode === "Network Error") && getAuthToken();
+    return (statusCode === 401 || statusCode === "Network Error") && !!getAuthToken();
   },
   onStatusChange = (status) => {
     console.log(`Token refresh status: ${status}`);
   },
+  authHeaderFormatter = (token) => `Bearer ${token}`,
+  refreshTimeout = 10000,
 }) {
   if (typeof refreshTokenFn !== "function") {
     throw new Error("refreshTokenFn must be a function");
@@ -37,9 +40,10 @@ export function createRefreshTokenPlugin({
     throw new Error("getAuthToken must be a function");
   }
 
-  const pendingRequests = new WeakMap();
-  const requestTracker = [];
+  // Store pending requests with their resolve/reject functions
+  const pendingRequests = [];
   let isRefreshing = false;
+  let refreshPromise = null;
 
   /**
    * The actual axios plugin function
@@ -52,74 +56,89 @@ export function createRefreshTokenPlugin({
       async (error) => {
         const originalRequest = error.config;
 
+        // If no config exists, we can't retry the request
+        if (!originalRequest) {
+          return Promise.reject(error);
+        }
+
         try {
           if (shouldRefreshToken(error, originalRequest) && !originalRequest._retry) {
-            pendingRequests.set(originalRequest, true);
-            requestTracker.push(originalRequest);
             originalRequest._retry = true;
+
+            // Create a new promise for this request
+            const retryPromise = new Promise((resolve, reject) => {
+              pendingRequests.push({
+                request: originalRequest,
+                resolve,
+                reject,
+              });
+            });
 
             // Start refresh token process if not already in progress
             if (!isRefreshing) {
               isRefreshing = true;
               onStatusChange("refreshing");
 
+              // Create the refresh promise with timeout
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                  reject(new Error("Token refresh timeout"));
+                }, refreshTimeout);
+              });
+
+              refreshPromise = Promise.race([refreshTokenFn(), timeoutPromise]);
+
               try {
-                // Call the provided refresh token function
-                const newToken = await refreshTokenFn();
+                // Call the provided refresh token function with timeout
+                const newToken = await refreshPromise;
                 onStatusChange("success");
 
                 // Process all pending requests with the new token
-                for (let i = requestTracker.length - 1; i >= 0; i--) {
-                  const request = requestTracker[i];
-
-                  if (pendingRequests.get(request)) {
-                    if (newToken) {
-                      request.headers["Authorization"] = `Bearer ${newToken}`;
-                    }
-
-                    // Retry the request
-                    pendingRequests.delete(request);
-                    requestTracker.splice(i, 1);
-
-                    if (request === originalRequest) {
-                      return axios(request);
-                    } else {
-                      axios(request);
-                    }
+                pendingRequests.forEach(({ request, resolve }) => {
+                  if (newToken) {
+                    request.headers["Authorization"] = authHeaderFormatter(newToken);
                   }
-                }
+                  // Resolve with axios retry
+                  resolve(axios(request));
+                });
+
+                // Clear pending requests
+                pendingRequests.length = 0;
               } catch (refreshError) {
-                onStatusChange("failed");
-                requestTracker.forEach((request) => pendingRequests.delete(request));
-                requestTracker.length = 0;
+                const error = refreshError instanceof Error ? refreshError : new Error("Token refresh failed");
+                onStatusChange("failed", error);
+
+                // Reject all pending requests
+                pendingRequests.forEach(({ reject }) => {
+                  const refreshFailedError = new Error("Token refresh failed");
+                  refreshFailedError.originalError = error;
+                  reject(refreshFailedError);
+                });
+
+                // Clear pending requests
+                pendingRequests.length = 0;
               } finally {
                 isRefreshing = false;
+                refreshPromise = null;
               }
-            } else if (pendingRequests.get(originalRequest)) {
-              return new Promise((resolve, reject) => {
-                const checkInterval = setInterval(() => {
-                  if (!isRefreshing) {
-                    clearInterval(checkInterval);
-
-                    if (!pendingRequests.get(originalRequest)) {
-                      resolve();
-                    } else {
-                      pendingRequests.delete(originalRequest);
-                      reject(error);
-                    }
-                  }
-                }, 100);
-              });
             }
+
+            return retryPromise;
           }
         } catch (interceptorError) {
-          console.error("Error in refresh token interceptor:", interceptorError);
+          const error = interceptorError instanceof Error ? interceptorError : new Error("Unknown error in refresh token interceptor");
+          console.error("Error in refresh token interceptor:", error);
 
           if (isRefreshing) {
-            onStatusChange("error");
-            requestTracker.forEach((request) => pendingRequests.delete(request));
-            requestTracker.length = 0;
+            onStatusChange("error", error);
+
+            pendingRequests.forEach(({ reject }) => {
+              reject(error);
+            });
+
+            pendingRequests.length = 0;
             isRefreshing = false;
+            refreshPromise = null;
           }
         }
 

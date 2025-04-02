@@ -24,7 +24,19 @@ export interface RefreshTokenPluginOptions {
    * Callback for token refresh status updates
    * @default (status) => { console.log(`Token refresh status: ${status}`); }
    */
-  onStatusChange?: (status: "refreshing" | "success" | "failed" | "error") => void;
+  onStatusChange?: (status: "refreshing" | "success" | "failed" | "error", error?: Error) => void;
+
+  /**
+   * Format the authorization header value
+   * @default (token) => `Bearer ${token}`
+   */
+  authHeaderFormatter?: (token: string) => string;
+
+  /**
+   * Timeout for token refresh operation in milliseconds
+   * @default 10000 (10 seconds)
+   */
+  refreshTimeout?: number;
 }
 
 /**
