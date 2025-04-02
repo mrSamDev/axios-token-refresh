@@ -26,7 +26,6 @@ export function createRefreshTokenPlugin({
     return (statusCode === 401 || statusCode === "Network Error") && getAuthToken();
   },
   onStatusChange = (status) => {
-    // Default status change handler
     console.log(`Token refresh status: ${status}`);
   },
 }) {
@@ -38,7 +37,6 @@ export function createRefreshTokenPlugin({
     throw new Error("getAuthToken must be a function");
   }
 
-  // Store pending requests that need retrying after token refresh
   const pendingRequests = new WeakMap();
   const requestTracker = [];
   let isRefreshing = false;
@@ -55,9 +53,7 @@ export function createRefreshTokenPlugin({
         const originalRequest = error.config;
 
         try {
-          // Check if we should trigger token refresh
-          if (shouldRefreshToken(error) && !originalRequest._retry) {
-            // Mark this request as being processed
+          if (shouldRefreshToken(error, originalRequest) && !originalRequest._retry) {
             pendingRequests.set(originalRequest, true);
             requestTracker.push(originalRequest);
             originalRequest._retry = true;
@@ -85,7 +81,6 @@ export function createRefreshTokenPlugin({
                     pendingRequests.delete(request);
                     requestTracker.splice(i, 1);
 
-                    // If this is the current request, return the axios call to avoid duplicate Promise.reject
                     if (request === originalRequest) {
                       return axios(request);
                     } else {
@@ -95,23 +90,20 @@ export function createRefreshTokenPlugin({
                 }
               } catch (refreshError) {
                 onStatusChange("failed");
-                // Handle refresh token failure
                 requestTracker.forEach((request) => pendingRequests.delete(request));
                 requestTracker.length = 0;
               } finally {
                 isRefreshing = false;
               }
             } else if (pendingRequests.get(originalRequest)) {
-              // If refresh is in progress, wait for it to complete before rejecting
               return new Promise((resolve, reject) => {
                 const checkInterval = setInterval(() => {
                   if (!isRefreshing) {
                     clearInterval(checkInterval);
-                    // If the request is no longer in pending, it was processed successfully
+
                     if (!pendingRequests.get(originalRequest)) {
                       resolve();
                     } else {
-                      // If still pending after refresh completed, reject it
                       pendingRequests.delete(originalRequest);
                       reject(error);
                     }

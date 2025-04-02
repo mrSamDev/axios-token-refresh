@@ -1,4 +1,4 @@
-import { AxiosError, AxiosInstance } from "axios";
+import { AxiosError, AxiosInstance, AxiosRequestConfig } from "axios";
 
 export interface RefreshTokenPluginOptions {
   /**
@@ -13,12 +13,12 @@ export interface RefreshTokenPluginOptions {
 
   /**
    * Function that determines if token refresh should be triggered
-   * @default (error) => {
+   * @default (error, originalRequest) => {
    *   const statusCode = error?.response ? error.response.status : "Network Error";
    *   return (statusCode === 401 || statusCode === "Network Error") && getAuthToken();
    * }
    */
-  shouldRefreshToken?: (error: AxiosError) => boolean;
+  shouldRefreshToken?: (error: AxiosError, originalRequest: AxiosRequestConfig) => boolean;
 
   /**
    * Callback for token refresh status updates
