@@ -1,0 +1,56 @@
+{
+  "name": "@mrsamdev/axios-token-refresh",
+  "version": "0.1.0",
+  "description": "Axios plugin to handle token refresh and request queueing on authentication failures",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "lint": "eslint src",
+    "prepublishOnly": "npm run build",
+    "docs": "jsdoc -c jsdoc.json"
+  },
+  "keywords": [
+    "axios",
+    "token",
+    "refresh",
+    "authentication",
+    "interceptor",
+    "oauth",
+    "jwt"
+  ],
+  "author": "MrSamDev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mrsamdev/axios-token-refresh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mrsamdev/axios-token-refresh/issues"
+  },
+  "homepage": "https://github.com/mrsamdev/axios-token-refresh#readme",
+  "peerDependencies": {
+    "axios": ">=0.21.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.22.5",
+    "@babel/preset-env": "^7.22.5",
+    "@rollup/plugin-babel": "^6.0.3",
+    "@rollup/plugin-commonjs": "^25.0.2",
+    "@rollup/plugin-node-resolve": "^15.1.0",
+    "@rollup/plugin-terser": "^0.4.3",
+    "axios": "^1.4.0",
+    "axios-mock-adapter": "^1.21.5",
+    "eslint": "^9.23.0",
+    "jest": "^29.5.0",
+    "jsdoc": "^4.0.2",
+    "rollup": "^3.25.1",
+    "rollup-plugin-dts": "^5.3.0"
+  }
+}

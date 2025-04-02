@@ -1,0 +1,42 @@
+{
+  "source": {
+    "include": ["src", "README.md"],
+    "includePattern": ".+\\.js(doc|x)?$"
+  },
+  "plugins": ["plugins/markdown"],
+  "opts": {
+    "destination": "./docs/",
+    "recurse": true,
+    "template": "node_modules/docdash"
+  },
+  "templates": {
+    "cleverLinks": false,
+    "monospaceLinks": false,
+    "default": {
+      "outputSourceFiles": true
+    }
+  },
+  "docdash": {
+    "static": true,
+    "sort": true,
+    "sectionOrder": ["Classes", "Modules", "Externals", "Events", "Namespaces", "Mixins", "Tutorials", "Interfaces"],
+    "meta": {
+      "title": "Axios Token Refresh",
+      "description": "Axios plugin to handle token refresh and request queueing",
+      "keyword": "axios,token,refresh,authentication,oauth,jwt"
+    },
+    "search": true,
+    "collapse": true,
+    "typedefs": true,
+    "removeQuotes": "none",
+    "scripts": [],
+    "menu": {
+      "Github repo": {
+        "href": "https://github.com/mrsamdev/axios-token-refresh",
+        "target": "_blank",
+        "class": "menu-item",
+        "id": "repository"
+      }
+    }
+  }
+}
