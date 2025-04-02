@@ -1,6 +1,6 @@
 {
   "name": "@mrsamdev/axios-token-refresh",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Axios plugin to handle token refresh and request queueing on authentication failures",
   "publishConfig": {
     "access": "public"
