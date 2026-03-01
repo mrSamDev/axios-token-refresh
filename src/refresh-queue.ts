@@ -59,8 +59,8 @@ export function createRefreshQueue(
       return existing;
     }
 
-    let resolveFn: (value: unknown) => void = () => {};
-    let rejectFn: (reason?: unknown) => void = () => {};
+    let resolveFn!: (value: unknown) => void;
+    let rejectFn!: (reason?: unknown) => void;
     const retryPromise = new Promise<unknown>((resolve, reject) => {
       resolveFn = resolve;
       rejectFn = reject;

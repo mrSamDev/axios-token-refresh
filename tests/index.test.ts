@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, beforeEach, describe, test, expect, vi } from "vitest";
-import { createRefreshTokenPlugin } from "./index";
-import { tryCatch } from "./try-catch";
+import { createRefreshTokenPlugin } from "../src/index";
+import { tryCatch } from "../src/try-catch";
 
 // Mock console.error to prevent test output pollution
 const originalConsoleError = console.error;
@@ -103,6 +103,16 @@ describe("createRefreshTokenPlugin", () => {
           refreshTokenFn: mockRefreshTokenFn,
           getAuthToken: mockGetAuthToken,
           maxRetryAttempts: 0,
+        });
+      }).toThrow("maxRetryAttempts must be an integer greater than or equal to 1");
+    });
+
+    test("should throw error for non-integer maxRetryAttempts", () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          maxRetryAttempts: 1.5,
         });
       }).toThrow("maxRetryAttempts must be an integer greater than or equal to 1");
     });
@@ -254,6 +264,36 @@ describe("createRefreshTokenPlugin", () => {
 
       await expect(responseInterceptor(error)).rejects.toBe(error);
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
+    });
+
+    test("should not refresh token on non-401 response errors", async () => {
+      const error = {
+        response: { status: 403 },
+        config: {
+          method: "GET",
+          url: "/forbidden",
+        },
+      };
+
+      await expect(responseInterceptor(error)).rejects.toBe(error);
+      expect(mockRefreshTokenFn).not.toHaveBeenCalled();
+    });
+
+    test("should refresh on network error when token exists (default shouldRefreshToken)", async () => {
+      const error = {
+        message: "Network Error",
+        config: {
+          method: "GET",
+          url: "/network",
+          headers: {},
+        },
+      };
+
+      const promise = responseInterceptor(error);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
+      expect(promise).toBeInstanceOf(Promise);
     });
 
     test("should not retry request twice", async () => {
@@ -494,6 +534,141 @@ describe("createRefreshTokenPlugin", () => {
       await responseInterceptor(error);
       expect(customFormatter).toHaveBeenCalledWith("new-token");
     });
+
+    test("should surface shouldRefreshToken errors through onStatusChange", async () => {
+      const shouldRefreshError = new Error("should-refresh-exploded");
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: mockRefreshTokenFn,
+        getAuthToken: mockGetAuthToken,
+        shouldRefreshToken: () => {
+          throw shouldRefreshError;
+        },
+        onStatusChange: mockOnStatusChange,
+      });
+
+      plugin(mockAxios);
+      const responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
+
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/test",
+        },
+      };
+
+      await expect(responseInterceptor(error)).rejects.toBe(shouldRefreshError);
+      expect(mockOnStatusChange).toHaveBeenCalledWith("error", shouldRefreshError);
+      expect(mockRefreshTokenFn).not.toHaveBeenCalled();
+    });
+
+    test("should normalize non-Error thrown values in shouldRefreshToken", async () => {
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: mockRefreshTokenFn,
+        getAuthToken: mockGetAuthToken,
+        shouldRefreshToken: () => {
+          throw "bad-throw";
+        },
+        onStatusChange: mockOnStatusChange,
+      });
+
+      plugin(mockAxios);
+      const responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
+
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/test",
+        },
+      };
+
+      await expect(responseInterceptor(error)).rejects.toMatchObject({
+        message: "Unknown error in refresh token interceptor",
+      });
+      expect(mockOnStatusChange).toHaveBeenCalledWith(
+        "error",
+        expect.objectContaining({ message: "Unknown error in refresh token interceptor" })
+      );
+      expect(mockRefreshTokenFn).not.toHaveBeenCalled();
+    });
+
+    test("should surface getRequestKey errors through onStatusChange", async () => {
+      const requestKeyError = new Error("request-key-exploded");
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: mockRefreshTokenFn,
+        getAuthToken: mockGetAuthToken,
+        getRequestKey: () => {
+          throw requestKeyError;
+        },
+        onStatusChange: mockOnStatusChange,
+      });
+
+      plugin(mockAxios);
+      const responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
+
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/test",
+        },
+      };
+
+      await expect(responseInterceptor(error)).rejects.toBe(requestKeyError);
+      expect(mockOnStatusChange).toHaveBeenCalledWith("error", requestKeyError);
+      expect(mockRefreshTokenFn).not.toHaveBeenCalled();
+    });
+
+    test("should reject queued requests when enqueue fails during active refresh", async () => {
+      const requestKeyError = new Error("request-key-exploded-during-refresh");
+      const deferredRefresh = new Promise<string | null>(() => {});
+
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: () => deferredRefresh,
+        getAuthToken: mockGetAuthToken,
+        getRequestKey: (request) => {
+          if (request.url === "/second") {
+            throw requestKeyError;
+          }
+          return `${request.method}-${request.url}`;
+        },
+        onStatusChange: mockOnStatusChange,
+      });
+
+      plugin(mockAxios);
+      const responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
+
+      const firstError = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/first",
+          headers: {},
+        },
+      };
+      const secondError = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/second",
+          headers: {},
+        },
+      };
+
+      const firstRequestPromise = responseInterceptor(firstError);
+      const firstHandled = firstRequestPromise.catch((error) => error);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      await expect(responseInterceptor(secondError)).rejects.toBe(requestKeyError);
+
+      await expect(firstHandled).resolves.toMatchObject({
+        message: "Token refresh failed",
+        originalError: requestKeyError,
+      });
+      expect(mockOnStatusChange).toHaveBeenCalledWith("error", requestKeyError);
+    });
   });
 
   describe("Cleanup", () => {
@@ -517,6 +692,46 @@ describe("createRefreshTokenPlugin", () => {
       const cleanup = plugin(mockAxios);
 
       expect(() => cleanup()).not.toThrow();
+    });
+
+    test("should reject pending queued requests on cleanup", async () => {
+      const deferredRefresh = new Promise<string | null>(() => {});
+      const refreshSpy = vi.fn(() => deferredRefresh);
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: refreshSpy,
+        getAuthToken: mockGetAuthToken,
+      });
+
+      const cleanup = plugin(mockAxios);
+      const responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/pending-cleanup",
+          headers: {},
+        },
+      };
+
+      const requestPromise = responseInterceptor(error);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+      const settledRequest = requestPromise.then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason) => ({ status: "rejected" as const, reason })
+      );
+
+      cleanup();
+
+      const settled = await settledRequest;
+      expect(settled.status).toBe("rejected");
+      if (settled.status === "rejected") {
+        expect(settled.reason).toMatchObject({
+          message: "Token refresh failed",
+          originalError: expect.objectContaining({ message: "Refresh interceptor cleaned up" }),
+        });
+      }
     });
   });
 });

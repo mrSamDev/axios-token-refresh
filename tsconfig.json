@@ -13,6 +13,6 @@
     "sourceMap": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "eslint.config.mjs", "vite.config.mjs"],
+  "include": ["src/**/*.ts", "tests/**/*.ts", "eslint.config.mjs", "vite.config.mjs"],
   "exclude": ["dist", "coverage", "node_modules"]
 }

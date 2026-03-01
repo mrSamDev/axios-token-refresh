@@ -156,21 +156,24 @@ export function createRefreshTokenPlugin({
         if (!isRefreshing) {
           isRefreshing = true;
           onStatusChange('refreshing');
-
           refreshPromise = createRefreshPromise();
-          const [newToken, refreshError] = await tryCatch<string | null, Error>(refreshPromise);
-          if (refreshError) {
-            onStatusChange('failed', refreshError);
-            queue.reject(refreshError);
-          } else {
-            onStatusChange('success');
-            queue.resolve(newToken, axios);
-          }
 
-          if (isRefreshing) {
-            isRefreshing = false;
-            refreshPromise = null;
-          }
+          // Run refresh lifecycle in the background; all callers await queue promises.
+          void (async () => {
+            const [newToken, refreshError] = await tryCatch<string | null, Error>(refreshPromise as Promise<string | null>);
+            if (refreshError) {
+              onStatusChange('failed', refreshError);
+              queue.reject(refreshError);
+            } else {
+              onStatusChange('success');
+              queue.resolve(newToken, axios);
+            }
+
+            if (isRefreshing) {
+              isRefreshing = false;
+              refreshPromise = null;
+            }
+          })();
         }
 
         return retryPromise;
@@ -178,6 +181,8 @@ export function createRefreshTokenPlugin({
     );
 
     return () => {
+      queue.reject(new Error('Refresh interceptor cleaned up'));
+
       if (autoInjectToken && typeof axios?.interceptors?.request?.eject === 'function') {
         axios.interceptors.request.eject(requestInterceptorId as number);
       }
@@ -186,7 +191,6 @@ export function createRefreshTokenPlugin({
         axios.interceptors.response.eject(responseInterceptorId);
       }
 
-      queue.reset();
       isRefreshing = false;
       refreshPromise = null;
     };

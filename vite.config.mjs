@@ -17,7 +17,6 @@ export default defineConfig({
   build: {
     lib: {
       entry: "src/index.ts",
-      formats: ["es", "cjs"],
     },
     emptyOutDir: true,
     sourcemap: true,
@@ -50,10 +49,12 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
+      include: ["src/**/*.ts"],
+      exclude: ["tests/**", "dist/**", "coverage/**", "opensrc/**", "node_modules/**"],
       lines: 70,
       functions: 70,
       branches: 70,
