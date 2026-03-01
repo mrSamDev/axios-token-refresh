@@ -25,6 +25,7 @@ yarn-error.log*
 .npm
 .eslintcache
 .cache
+*.tsbuildinfo
 
 # OS specific files
 .DS_Store
@@ -35,3 +36,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# opensrc - source code for packages
+opensrc/

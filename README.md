@@ -16,6 +16,9 @@ A robust Axios plugin that handles token refresh logic when API calls fail due t
 - 📊 Status change notifications during token refresh
 - ⏰ Configurable timeout for token refresh operations
 - 🔑 Customizable auth header formatting
+- 🧠 Customizable request dedupe key via `getRequestKey`
+- 🚫 Per-request refresh opt-out with `skipAuthRefresh`
+- 🔁 Configurable refresh retry policy (`maxRetryAttempts`, `retryDelay`)
 - 📦 Supports ESM and CommonJS
 - 🔒 TypeScript support with full type definitions
 
@@ -36,6 +39,14 @@ or
 ```bash
 yarn add @mrsamdev/axios-token-refresh
 ```
+
+## Development
+
+- Typecheck: `pnpm typecheck`
+- Build: `pnpm build` (Vite library mode; outputs CJS/ESM + minified variants to `dist/`)
+- Tests: `pnpm test` (Vitest, node environment)
+- Coverage: `pnpm test:coverage`
+- Library source: `src/index.ts`
 
 ## Usage
 
@@ -102,6 +113,9 @@ const refreshPlugin = createRefreshTokenPlugin({
   // Custom options added in latest version
   authHeaderFormatter: (token) => `Custom ${token}`, // Default: `Bearer ${token}`
   refreshTimeout: 15000, // 15 seconds timeout (default: 10000ms)
+  maxRetryAttempts: 3, // Total refresh attempts including the initial attempt
+  retryDelay: 300, // Delay in ms between refresh retry attempts
+  getRequestKey: (request) => `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`,
 
   shouldRefreshToken: (error) => {
     // Custom logic to determine when to refresh the token
@@ -115,6 +129,28 @@ const refreshPlugin = createRefreshTokenPlugin({
     );
   },
 });
+```
+
+### Skip Refresh For Specific Requests
+
+Use `skipAuthRefresh: true` to bypass refresh logic for endpoints like login/logout/refresh:
+
+```typescript
+apiClient.get("/public-profile", {
+  skipAuthRefresh: true,
+});
+```
+
+If TypeScript complains about this custom config property, add module augmentation once in your project:
+
+```typescript
+import "axios";
+
+declare module "axios" {
+  interface InternalAxiosRequestConfig {
+    skipAuthRefresh?: boolean;
+  }
+}
 ```
 
 ## TypeScript Usage
@@ -155,15 +191,18 @@ Creates an Axios interceptor plugin that handles token refresh.
 | `shouldRefreshToken`  | `(error: AxiosError, originalRequest: object) => boolean` | No       | Checks for 401 status or network errors | Function that determines if token refresh should be triggered.                                                             |
 | `onStatusChange`      | `(status: string, error?: Error) => void`                 | No       | Console log function                    | Callback for token refresh status updates with error details. Status can be "refreshing", "success", "failed", or "error". |
 | `authHeaderFormatter` | `(token: string) => string`                               | No       | `(token) => Bearer ${token}`            | Function to format the authorization header value.                                                                         |
+| `getRequestKey`       | `(request: AxiosRequestConfig) => string`                 | No       | `method-url-params`                     | Custom dedupe key for queued retries. Use this to include fields like `data` to avoid collisions.                         |
 | `refreshTimeout`      | `number`                                                  | No       | `10000` (10 seconds)                    | Timeout for token refresh operation in milliseconds.                                                                       |
+| `maxRetryAttempts`    | `number`                                                  | No       | `1`                                     | Number of refresh attempts before failing. Must be an integer greater than or equal to 1.                                 |
+| `retryDelay`          | `number`                                                  | No       | `0`                                     | Delay in milliseconds between refresh retry attempts. Must be greater than or equal to 0.                                 |
 
 ## How It Works
 
 1. When an API call fails, the interceptor checks if the error meets the criteria for token refresh.
 2. If token refresh is needed, it queues the failed request and starts the token refresh process (if not already in progress).
-3. If the token refresh doesn't complete within the specified timeout, all requests are rejected with a timeout error.
-4. Once the token is refreshed, all queued requests are automatically retried with the new token.
-5. If token refresh fails, all queued requests are rejected with detailed error information.
+3. The refresh operation is attempted up to `maxRetryAttempts` times with optional `retryDelay` between attempts.
+4. If refresh attempts fail (including timeout), all queued requests are rejected with detailed error information.
+5. Once the token is refreshed, all queued requests are automatically retried with the new token.
 
 ## Error Handling
 

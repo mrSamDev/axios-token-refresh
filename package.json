@@ -14,10 +14,14 @@
     "README.md"
   ],
   "scripts": {
-    "build": "rollup -c",
-    "lint": "eslint src",
+    "build": "vite build",
+    "lint": "eslint \"src/**/*.{ts,mts}\" \"*.{js,mjs}\"",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
-    "docs": "jsdoc -c jsdoc.json"
+    "docs": "jsdoc -c jsdoc.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "axios",
@@ -42,18 +46,20 @@
     "axios": ">=0.21.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.22.5",
-    "@babel/preset-env": "^7.22.5",
-    "@rollup/plugin-babel": "^6.0.3",
-    "@rollup/plugin-commonjs": "^25.0.2",
-    "@rollup/plugin-node-resolve": "^15.1.0",
-    "@rollup/plugin-terser": "^0.4.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@types/node": "^22.13.14",
+    "@typescript-eslint/eslint-plugin": "^8.28.0",
+    "@typescript-eslint/parser": "^8.28.0",
+    "@vitest/coverage-v8": "^1.6.0",
     "axios": "^1.4.0",
     "axios-mock-adapter": "^1.21.5",
     "eslint": "^9.23.0",
-    "jest": "^29.5.0",
     "jsdoc": "^4.0.2",
-    "rollup": "^3.25.1",
-    "rollup-plugin-dts": "^5.3.0"
+    "opensrc": "^0.6.0",
+    "terser": "^5.37.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.0.0",
+    "vitest": "^1.6.0"
   }
 }
