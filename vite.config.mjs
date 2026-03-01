@@ -16,7 +16,7 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: "src/index.js",
+      entry: "src/index.ts",
       formats: ["es", "cjs"],
     },
     emptyOutDir: true,
@@ -50,7 +50,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.js"],
+    include: ["src/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],

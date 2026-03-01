@@ -25,6 +25,7 @@ yarn-error.log*
 .npm
 .eslintcache
 .cache
+*.tsbuildinfo
 
 # OS specific files
 .DS_Store

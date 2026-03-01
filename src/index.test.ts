@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, beforeEach, describe, test, expect, vi } from "vitest";
-import { createRefreshTokenPlugin } from "./index.js";
+import { createRefreshTokenPlugin } from "./index";
+import { tryCatch } from "./try-catch";
 
 // Mock console.error to prevent test output pollution
 const originalConsoleError = console.error;
@@ -17,7 +18,7 @@ afterAll(() => {
 
 // Minimal axios-like mock with interceptors and callable instance
 const createMockAxios = () => {
-  const instance = vi.fn();
+  const instance = vi.fn() as any;
 
   instance.interceptors = {
     request: {
@@ -55,7 +56,7 @@ const mockShouldRefreshToken = vi.fn();
 const mockAuthHeaderFormatter = vi.fn();
 
 describe("createRefreshTokenPlugin", () => {
-  let mockAxios;
+  let mockAxios: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -72,7 +73,7 @@ describe("createRefreshTokenPlugin", () => {
     test("should throw error if refreshTokenFn is not a function", () => {
       expect(() => {
         createRefreshTokenPlugin({
-          refreshTokenFn: "not-a-function",
+          refreshTokenFn: "not-a-function" as any,
           getAuthToken: mockGetAuthToken,
         });
       }).toThrow("refreshTokenFn must be a function");
@@ -82,7 +83,7 @@ describe("createRefreshTokenPlugin", () => {
       expect(() => {
         createRefreshTokenPlugin({
           refreshTokenFn: mockRefreshTokenFn,
-          getAuthToken: "not-a-function",
+          getAuthToken: "not-a-function" as any,
         });
       }).toThrow("getAuthToken must be a function");
     });
@@ -94,6 +95,26 @@ describe("createRefreshTokenPlugin", () => {
       });
 
       expect(typeof plugin).toBe("function");
+    });
+
+    test("should throw error for invalid maxRetryAttempts", () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          maxRetryAttempts: 0,
+        });
+      }).toThrow("maxRetryAttempts must be an integer greater than or equal to 1");
+    });
+
+    test("should throw error for invalid retryDelay", () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          retryDelay: -1,
+        });
+      }).toThrow("retryDelay must be a number greater than or equal to 0");
     });
   });
 
@@ -176,7 +197,7 @@ describe("createRefreshTokenPlugin", () => {
   });
 
   describe("Response Interceptor", () => {
-    let responseInterceptor;
+    let responseInterceptor: any;
 
     beforeEach(() => {
       const plugin = createRefreshTokenPlugin({
@@ -250,6 +271,20 @@ describe("createRefreshTokenPlugin", () => {
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
+    test("should skip refresh when skipAuthRefresh is true", async () => {
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/test",
+          skipAuthRefresh: true,
+        },
+      };
+
+      await expect(responseInterceptor(error)).rejects.toBe(error);
+      expect(mockRefreshTokenFn).not.toHaveBeenCalled();
+    });
+
     test("should handle missing config", async () => {
       const error = {
         response: { status: 401 },
@@ -262,7 +297,7 @@ describe("createRefreshTokenPlugin", () => {
   });
 
   describe("Token Refresh Logic", () => {
-    let responseInterceptor;
+    let responseInterceptor: any;
 
     beforeEach(() => {
       const plugin = createRefreshTokenPlugin({
@@ -333,6 +368,79 @@ describe("createRefreshTokenPlugin", () => {
 
       expect(mockOnStatusChange).toHaveBeenCalledWith("failed", expect.any(Error));
     }, 10000); // Increase test timeout to 10 seconds
+
+    test("retries refresh and succeeds before maxRetryAttempts", async () => {
+      const retryingRefreshTokenFn = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Temporary refresh failure"))
+        .mockResolvedValueOnce("retried-token");
+
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: retryingRefreshTokenFn,
+        getAuthToken: mockGetAuthToken,
+        onStatusChange: mockOnStatusChange,
+        maxRetryAttempts: 2,
+        retryDelay: 5,
+      });
+
+      plugin(mockAxios);
+      const responseInterceptorCalls = mockAxios.interceptors.response.use.mock.calls;
+      const interceptor = responseInterceptorCalls[responseInterceptorCalls.length - 1][1];
+
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/retry-success",
+          headers: {},
+        },
+      };
+
+      await interceptor(error);
+
+      expect(retryingRefreshTokenFn).toHaveBeenCalledTimes(2);
+      expect(mockAxios).toHaveBeenCalledTimes(1);
+      expect(mockOnStatusChange).toHaveBeenCalledWith("success");
+    });
+
+    test("fails after reaching maxRetryAttempts", async () => {
+      const alwaysFailRefreshTokenFn = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("attempt-1"))
+        .mockRejectedValueOnce(new Error("attempt-2"));
+
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: alwaysFailRefreshTokenFn,
+        getAuthToken: mockGetAuthToken,
+        onStatusChange: mockOnStatusChange,
+        maxRetryAttempts: 2,
+        retryDelay: 5,
+      });
+
+      plugin(mockAxios);
+      const responseInterceptorCalls = mockAxios.interceptors.response.use.mock.calls;
+      const interceptor = responseInterceptorCalls[responseInterceptorCalls.length - 1][1];
+
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: "GET",
+          url: "/retry-fail",
+          headers: {},
+        },
+      };
+
+      await expect(interceptor(error)).rejects.toMatchObject({
+        message: "Token refresh failed",
+        originalError: expect.objectContaining({ message: "attempt-2" }),
+      });
+
+      expect(alwaysFailRefreshTokenFn).toHaveBeenCalledTimes(2);
+      expect(mockOnStatusChange).toHaveBeenCalledWith(
+        "failed",
+        expect.objectContaining({ message: "attempt-2" })
+      );
+    });
   });
 
   describe("Custom Options", () => {
@@ -417,7 +525,7 @@ describe("Queue handling", () => {
   const mockRefreshTokenFn = vi.fn();
   const mockGetAuthToken = vi.fn();
 
-  let mockAxios;
+  let mockAxios: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -479,5 +587,86 @@ describe("Queue handling", () => {
         headers: expect.objectContaining({ Authorization: "Bearer queue-token" }),
       })
     );
+  });
+
+  test("uses custom getRequestKey for dedupe", async () => {
+    const plugin = createRefreshTokenPlugin({
+      refreshTokenFn: mockRefreshTokenFn,
+      getAuthToken: mockGetAuthToken,
+      getRequestKey: () => "same-custom-key",
+    });
+
+    plugin(mockAxios);
+    const [, responseInterceptor] = mockAxios.interceptors.response.use.mock.calls[0];
+
+    const error1 = {
+      response: { status: 401 },
+      config: { method: "GET", url: "/first", params: { a: 1 } },
+    };
+    const error2 = {
+      response: { status: 401 },
+      config: { method: "GET", url: "/second", params: { b: 2 } },
+    };
+
+    const [result1, result2] = await Promise.all([responseInterceptor(error1), responseInterceptor(error2)]);
+
+    expect(result1).toStrictEqual(result2);
+    expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
+    expect(mockAxios).toHaveBeenCalledTimes(1);
+  });
+
+  test("custom getRequestKey can prevent dedupe collisions", async () => {
+    const plugin = createRefreshTokenPlugin({
+      refreshTokenFn: mockRefreshTokenFn,
+      getAuthToken: mockGetAuthToken,
+      getRequestKey: (request) => `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`,
+    });
+
+    plugin(mockAxios);
+    const [, responseInterceptor] = mockAxios.interceptors.response.use.mock.calls[0];
+
+    const error1 = {
+      response: { status: 401 },
+      config: { method: "POST", url: "/same", data: { payload: 1 } },
+    };
+    const error2 = {
+      response: { status: 401 },
+      config: { method: "POST", url: "/same", data: { payload: 2 } },
+    };
+
+    await Promise.all([responseInterceptor(error1), responseInterceptor(error2)]);
+
+    expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
+    expect(mockAxios).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("tryCatch", () => {
+  test("returns success tuple for synchronous operations", () => {
+    const result = tryCatch(() => 42);
+
+    expect(result).toStrictEqual([42, null]);
+  });
+
+  test("returns failure tuple for synchronous errors", () => {
+    const result = tryCatch(() => {
+      throw new Error("sync-fail");
+    });
+
+    expect(result[0]).toBeNull();
+    expect((result[1] as Error)?.message).toBe("sync-fail");
+  });
+
+  test("returns success tuple for promise operations", async () => {
+    const result = await tryCatch(Promise.resolve("ok"));
+
+    expect(result).toStrictEqual(["ok", null]);
+  });
+
+  test("returns failure tuple for rejected promises", async () => {
+    const result = await tryCatch(Promise.reject(new Error("async-fail")));
+
+    expect(result[0]).toBeNull();
+    expect((result[1] as Error)?.message).toBe("async-fail");
   });
 });
