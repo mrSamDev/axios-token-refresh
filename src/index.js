@@ -8,7 +8,8 @@
  */
 
 /**
- * Creates and returns an axios interceptor plugin that handles token refresh
+ * Creates and returns an axios interceptor plugin that handles token refresh.
+ * Keeps the public API intact while organising the code for clarity and testability.
  *
  * @param {Object} options - Configuration options
  * @param {Function} options.refreshTokenFn - Async function that refreshes the token and returns the new token
@@ -18,7 +19,7 @@
  * @param {Function} [options.authHeaderFormatter] - Format the authorization header value
  * @param {number} [options.refreshTimeout] - Timeout for token refresh operation in milliseconds
  * @param {boolean} [options.autoInjectToken] - Automatically inject token in request headers
- * @returns {Function} Axios plugin function
+ * @returns {Function} Axios plugin function that installs interceptors and returns a cleanup callback
  */
 export function createRefreshTokenPlugin({
   refreshTokenFn,
@@ -26,12 +27,12 @@ export function createRefreshTokenPlugin({
   shouldRefreshToken = (error, originalRequest) => {
     if (!getAuthToken()) return false;
 
-    // Handle network errors (no response object)
+    // Network errors (no response object)
     if (!error?.response) {
       return true;
     }
 
-    // Handle 401 unauthorized
+    // 401 unauthorized
     return error.response.status === 401;
   },
   onStatusChange = (status, error) => {
@@ -40,7 +41,7 @@ export function createRefreshTokenPlugin({
   authHeaderFormatter = (token) => `Bearer ${token}`,
   refreshTimeout = 10000,
   autoInjectToken = true,
-}) {
+} = {}) {
   if (typeof refreshTokenFn !== "function") {
     throw new Error("refreshTokenFn must be a function");
   }
@@ -49,9 +50,9 @@ export function createRefreshTokenPlugin({
     throw new Error("getAuthToken must be a function");
   }
 
-  // Store pending requests with their resolve/reject functions
+  // Pending authorized requests waiting for a refreshed token
   const pendingRequests = [];
-  const pendingRequestsMap = new Map(); // For request deduplication
+  const requestPromiseMap = new Map(); // For request deduplication
   let isRefreshing = false;
   let refreshPromise = null;
 
@@ -60,16 +61,101 @@ export function createRefreshTokenPlugin({
    * @param {Object} config - Axios request config
    * @returns {string} Unique request key
    */
-  const getRequestKey = (config) => {
-    return `${config.method || "get"}-${config.url}-${JSON.stringify(config.params || {})}`;
+  const getRequestKey = (config = {}) => {
+    const method = (config.method || "get").toLowerCase();
+    const url = config.url || "";
+    const params = JSON.stringify(config.params || {});
+    return `${method}-${url}-${params}`;
   };
 
-  /**
-   * Clean up request tracking
-   */
-  const cleanupRequests = () => {
+  const applyAuthHeader = (config, token, force = false) => {
+    if (!token) return config;
+    config.headers = config.headers || {};
+
+    if (force || !config.headers.Authorization) {
+      config.headers.Authorization = authHeaderFormatter(token);
+    }
+
+    return config;
+  };
+
+  const resetTracking = () => {
     pendingRequests.length = 0;
-    pendingRequestsMap.clear();
+    requestPromiseMap.clear();
+  };
+
+  const enqueueRequest = (originalRequest) => {
+    const requestKey = getRequestKey(originalRequest);
+
+    if (requestPromiseMap.has(requestKey)) {
+      return requestPromiseMap.get(requestKey);
+    }
+
+    let resolveFn;
+    let rejectFn;
+
+    const retryPromise = new Promise((resolve, reject) => {
+      resolveFn = resolve;
+      rejectFn = reject;
+    });
+
+    pendingRequests.push({
+      request: originalRequest,
+      requestKey,
+      resolve: resolveFn,
+      reject: rejectFn,
+    });
+
+    requestPromiseMap.set(requestKey, retryPromise);
+    return retryPromise;
+  };
+
+  const executeRequest = (axiosInstance, request) => {
+    const target = typeof axiosInstance === "function" ? axiosInstance : axiosInstance?.request?.bind(axiosInstance);
+
+    if (!target) {
+      return Promise.reject(new Error("Provided axios instance is not callable"));
+    }
+
+    return target(request);
+  };
+
+  const resolveQueue = (newToken, axiosInstance) => {
+    const requestsToResolve = [...pendingRequests];
+    resetTracking();
+
+    requestsToResolve.forEach(({ request, resolve }) => {
+      const requestConfig = {
+        ...request,
+        headers: { ...(request.headers || {}) },
+      };
+
+      applyAuthHeader(requestConfig, newToken, true);
+      resolve(executeRequest(axiosInstance, requestConfig));
+    });
+  };
+
+  const rejectQueue = (refreshError) => {
+    const error = refreshError instanceof Error ? refreshError : new Error("Token refresh failed");
+    const requestsToReject = [...pendingRequests];
+    resetTracking();
+
+    requestsToReject.forEach(({ reject }) => {
+      const refreshFailedError = new Error("Token refresh failed");
+      refreshFailedError.originalError = error;
+      reject(refreshFailedError);
+    });
+  };
+
+  const createRefreshPromise = () => {
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("Token refresh timeout"));
+      }, refreshTimeout);
+    });
+
+    refreshPromise = Promise.race([Promise.resolve().then(refreshTokenFn), timeoutPromise]);
+    return refreshPromise;
   };
 
   /**
@@ -77,139 +163,77 @@ export function createRefreshTokenPlugin({
    * @param {Object} axios - Axios instance
    */
   return (axios) => {
-    // Add request interceptor for automatic token injection
-    if (autoInjectToken) {
-      axios.interceptors.request.use(
-        (config) => {
-          const token = getAuthToken();
-          if (token && !config.headers?.["Authorization"]) {
-            config.headers = config.headers || {};
-            config.headers["Authorization"] = authHeaderFormatter(token);
-          }
-          return config;
-        },
-        (error) => Promise.reject(error)
-      );
-    }
+    const requestInterceptorId = autoInjectToken
+      ? axios.interceptors.request.use(
+          (config) => {
+            const token = getAuthToken();
+            return token ? applyAuthHeader(config, token) : config;
+          },
+          (error) => Promise.reject(error)
+        )
+      : null;
 
-    // Add response interceptor
-    axios.interceptors.response.use(
+    const responseInterceptorId = axios.interceptors.response.use(
       (response) => response,
       async (error) => {
-        const originalRequest = error.config;
+        const originalRequest = error?.config;
 
-        // If no config exists, we can't retry the request
-        if (!originalRequest) {
+        if (!originalRequest || originalRequest._retry) {
           return Promise.reject(error);
         }
 
         try {
-          if (shouldRefreshToken(error, originalRequest) && !originalRequest._retry) {
-            originalRequest._retry = true;
-
-            // Check for duplicate requests
-            const requestKey = getRequestKey(originalRequest);
-            if (pendingRequestsMap.has(requestKey)) {
-              return pendingRequestsMap.get(requestKey);
-            }
-
-            // Create a new promise for this request
-            const retryPromise = new Promise((resolve, reject) => {
-              pendingRequests.push({
-                request: originalRequest,
-                requestKey,
-                resolve,
-                reject,
-              });
-            });
-
-            // Store the promise to prevent duplicates
-            pendingRequestsMap.set(requestKey, retryPromise);
-
-            // Start refresh token process if not already in progress
-            if (!isRefreshing) {
-              isRefreshing = true;
-              onStatusChange("refreshing");
-
-              // Create the refresh promise with timeout
-              const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => {
-                  reject(new Error("Token refresh timeout"));
-                }, refreshTimeout);
-              });
-
-              refreshPromise = Promise.race([refreshTokenFn(), timeoutPromise]);
-
-              try {
-                // Call the provided refresh token function with timeout
-                const newToken = await refreshPromise;
-                onStatusChange("success");
-
-                // Process all pending requests with the new token
-                const requestsToResolve = [...pendingRequests];
-                cleanupRequests();
-
-                // Resolve all pending requests
-                requestsToResolve.forEach(({ request, resolve }) => {
-                  if (newToken) {
-                    request.headers = request.headers || {};
-                    request.headers["Authorization"] = authHeaderFormatter(newToken);
-                  }
-                  // Resolve with axios retry
-                  resolve(axios(request));
-                });
-              } catch (refreshError) {
-                const error = refreshError instanceof Error ? refreshError : new Error("Token refresh failed");
-
-                onStatusChange("failed", error);
-
-                // Reject all pending requests
-                const requestsToReject = [...pendingRequests];
-                cleanupRequests();
-
-                requestsToReject.forEach(({ reject }) => {
-                  const refreshFailedError = new Error("Token refresh failed");
-                  refreshFailedError.originalError = error;
-                  reject(refreshFailedError);
-                });
-              } finally {
-                isRefreshing = false;
-                refreshPromise = null;
-              }
-            }
-
-            return retryPromise;
+          if (!shouldRefreshToken(error, originalRequest)) {
+            return Promise.reject(error);
           }
+
+          originalRequest._retry = true;
+          const retryPromise = enqueueRequest(originalRequest);
+
+          if (!isRefreshing) {
+            isRefreshing = true;
+            onStatusChange("refreshing");
+
+            try {
+              const newToken = await createRefreshPromise();
+              onStatusChange("success");
+              resolveQueue(newToken, axios);
+            } catch (refreshError) {
+              onStatusChange("failed", refreshError instanceof Error ? refreshError : new Error("Token refresh failed"));
+              rejectQueue(refreshError);
+            } finally {
+              isRefreshing = false;
+              refreshPromise = null;
+            }
+          }
+
+          return retryPromise;
         } catch (interceptorError) {
           const handledError = interceptorError instanceof Error ? interceptorError : new Error("Unknown error in refresh token interceptor");
-
-          console.error("Error in refresh token interceptor:", handledError);
           onStatusChange("error", handledError);
 
-          // Only clean up if we were the ones managing the refresh state
           if (isRefreshing && refreshPromise) {
-            const requestsToReject = [...pendingRequests];
-            cleanupRequests();
-
-            requestsToReject.forEach(({ reject }) => {
-              reject(handledError);
-            });
-
+            rejectQueue(handledError);
             isRefreshing = false;
             refreshPromise = null;
           }
 
-          // For non-refresh related errors, just reject the current request
           return Promise.reject(handledError);
         }
-
-        return Promise.reject(error);
       }
     );
 
     // Return cleanup function
     return () => {
-      cleanupRequests();
+      if (autoInjectToken && typeof axios?.interceptors?.request?.eject === "function") {
+        axios.interceptors.request.eject(requestInterceptorId);
+      }
+
+      if (typeof axios?.interceptors?.response?.eject === "function") {
+        axios.interceptors.response.eject(responseInterceptorId);
+      }
+
+      resetTracking();
       isRefreshing = false;
       refreshPromise = null;
     };

@@ -37,6 +37,12 @@ or
 yarn add @mrsamdev/axios-token-refresh
 ```
 
+## Development
+
+- Build: `pnpm build` (Vite library mode; outputs CJS/ESM + minified variants to `dist/`)
+- Tests: `pnpm test` (Vitest, node environment)
+- Coverage: `pnpm test:coverage`
+
 ## Usage
 
 ### Basic Example

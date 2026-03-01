@@ -35,3 +35,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# opensrc - source code for packages
+opensrc/

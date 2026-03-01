@@ -37,11 +37,17 @@ export interface RefreshTokenPluginOptions {
    * @default 10000 (10 seconds)
    */
   refreshTimeout?: number;
+
+  /**
+   * Automatically inject Authorization header on outgoing requests
+   * @default true
+   */
+  autoInjectToken?: boolean;
 }
 
 /**
  * Creates and returns an axios interceptor plugin that handles token refresh
  */
-export function createRefreshTokenPlugin(options: RefreshTokenPluginOptions): (axios: AxiosInstance) => void;
+export function createRefreshTokenPlugin(options: RefreshTokenPluginOptions): (axios: AxiosInstance) => () => void;
 
 export default createRefreshTokenPlugin;
