@@ -4,7 +4,6 @@ jspm_packages/
 
 # Build outputs
 dist/
-docs/
 coverage/
 
 # Logs

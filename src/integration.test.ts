@@ -57,6 +57,7 @@ describe("integration: real axios interceptors", () => {
       },
       maxRetryAttempts: 2,
       retryDelay: 30,
+      onStatusChange: () => {},
     })(apiClient);
 
     contexts.push({ cleanup, apiMock, authMock });
@@ -95,6 +96,7 @@ describe("integration: real axios interceptors", () => {
       },
       maxRetryAttempts: 2,
       retryDelay: 10,
+      onStatusChange: () => {},
     })(apiClient);
 
     contexts.push({ cleanup, apiMock, authMock });
@@ -123,6 +125,7 @@ describe("integration: real axios interceptors", () => {
         token = response.data.token;
         return token;
       },
+      onStatusChange: () => {},
     })(apiClient);
 
     contexts.push({ cleanup, apiMock, authMock });
@@ -171,6 +174,7 @@ describe("integration: real axios interceptors", () => {
       getRequestKey: (request) => {
         return `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`;
       },
+      onStatusChange: () => {},
     })(apiClient);
 
     contexts.push({ cleanup, apiMock, authMock });
