@@ -8,7 +8,6 @@ const external = Object.keys(pkg.peerDependencies || {});
 export default defineConfig({
   plugins: [
     dts({
-      outputDir: "dist",
       entryRoot: "src",
       insertTypesEntry: true,
       exclude: ["**/*.test.*"],

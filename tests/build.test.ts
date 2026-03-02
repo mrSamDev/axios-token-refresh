@@ -45,8 +45,8 @@ describe("build pipeline", () => {
         expect(exists).toBe(true);
       }
 
-      // vite-plugin-dts is configured with outputDir: "dist" in vite.config.mjs
-      const declarationExists = await fileExists(path.join(process.cwd(), "dist", "index.d.ts"));
+      // Declarations should be emitted alongside build artifacts.
+      const declarationExists = await fileExists(path.join(outDir, "index.d.ts"));
       expect(declarationExists).toBe(true);
     },
     30000
