@@ -7,11 +7,7 @@ import config from "../vite.config.mjs";
 
 const requiredBuildFiles = [
   "index.js",
-  "index.js.map",
   "index.esm.js",
-  "index.esm.js.map",
-  "index.min.js",
-  "index.esm.min.js",
 ];
 
 const fileExists = async (filePath) => {

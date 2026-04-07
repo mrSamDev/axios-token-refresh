@@ -1,6 +1,6 @@
 {
   "name": "@mrsamdev/axios-token-refresh",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Axios plugin to handle token refresh and request queueing on authentication failures",
   "publishConfig": {
     "access": "public"
@@ -46,8 +46,7 @@
     "axios": ">=0.21.0"
   },
   "devDependencies": {
-    "@rollup/plugin-terser": "^0.4.4",
-    "@types/node": "^22.13.14",
+"@types/node": "^22.13.14",
     "@typescript-eslint/eslint-plugin": "^8.28.0",
     "@typescript-eslint/parser": "^8.28.0",
     "@vitest/coverage-v8": "^1.6.0",
