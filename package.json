@@ -1,6 +1,6 @@
 {
   "name": "@mrsamdev/axios-token-refresh",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Axios plugin to handle token refresh and request queueing on authentication failures",
   "keywords": [
     "authentication",
@@ -11,15 +11,15 @@
     "refresh",
     "token"
   ],
-  "homepage": "https://github.com/mrsamdev/axios-token-refresh#readme",
+  "homepage": "https://github.com/mrSamDev/axios-token-refresh#readme",
   "bugs": {
-    "url": "https://github.com/mrsamdev/axios-token-refresh/issues"
+    "url": "https://github.com/mrSamDev/axios-token-refresh/issues"
   },
   "license": "MIT",
   "author": "MrSamDev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mrsamdev/axios-token-refresh.git"
+    "url": "git+https://github.com/mrSamDev/axios-token-refresh.git"
   },
   "files": [
     "dist",
