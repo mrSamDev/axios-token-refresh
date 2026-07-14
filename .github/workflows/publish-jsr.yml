@@ -30,6 +30,8 @@ jobs:
           fi
           TAG="$(git describe --tags --exact-match HEAD)"
           echo "Publishing from tag: $TAG"
+      - name: Install dependencies
+        run: deno install
       - name: Type-check
         run: deno check src/index.ts
       - name: Publish to JSR
