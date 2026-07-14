@@ -1,6 +1,7 @@
-import { beforeAll, afterAll, beforeEach, describe, test, expect, vi } from "vitest";
-import { createRefreshTokenPlugin } from "../src/index";
-import { tryCatch } from "../src/try-catch";
+import { beforeAll, afterAll, beforeEach, describe, test, expect, vi } from 'vitest';
+
+import { createRefreshTokenPlugin } from '../src/index';
+import { tryCatch } from '../src/try-catch';
 
 // Mock console.error to prevent test output pollution
 const originalConsoleError = console.error;
@@ -55,81 +56,81 @@ const mockOnStatusChange = vi.fn();
 const mockShouldRefreshToken = vi.fn();
 const mockAuthHeaderFormatter = vi.fn();
 
-describe("createRefreshTokenPlugin", () => {
+describe('createRefreshTokenPlugin', () => {
   let mockAxios: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockAxios = createMockAxios();
-    mockAxios.mockResolvedValue({ data: "retry-success" });
-    mockAxios.request.mockResolvedValue({ data: "retry-success" });
-    mockRefreshTokenFn.mockResolvedValue("new-token");
-    mockGetAuthToken.mockReturnValue("current-token");
+    mockAxios.mockResolvedValue({ data: 'retry-success' });
+    mockAxios.request.mockResolvedValue({ data: 'retry-success' });
+    mockRefreshTokenFn.mockResolvedValue('new-token');
+    mockGetAuthToken.mockReturnValue('current-token');
     mockOnStatusChange.mockImplementation(() => {});
     mockAuthHeaderFormatter.mockImplementation((token) => `Bearer ${token}`);
   });
 
-  describe("Plugin Creation", () => {
-    test("should throw error if refreshTokenFn is not a function", () => {
+  describe('Plugin Creation', () => {
+    test('should throw error if refreshTokenFn is not a function', () => {
       expect(() => {
         createRefreshTokenPlugin({
-          refreshTokenFn: "not-a-function" as any,
+          refreshTokenFn: 'not-a-function' as any,
           getAuthToken: mockGetAuthToken,
         });
-      }).toThrow("refreshTokenFn must be a function");
+      }).toThrow('refreshTokenFn must be a function');
     });
 
-    test("should throw error if getAuthToken is not a function", () => {
+    test('should throw error if getAuthToken is not a function', () => {
       expect(() => {
         createRefreshTokenPlugin({
           refreshTokenFn: mockRefreshTokenFn,
-          getAuthToken: "not-a-function" as any,
+          getAuthToken: 'not-a-function' as any,
         });
-      }).toThrow("getAuthToken must be a function");
+      }).toThrow('getAuthToken must be a function');
     });
 
-    test("should create plugin with default options", () => {
+    test('should create plugin with default options', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
       });
 
-      expect(typeof plugin).toBe("function");
+      expect(typeof plugin).toBe('function');
     });
 
-    test("should throw error for invalid maxRetryAttempts", () => {
+    test('should throw error for invalid maxRetryAttempts', () => {
       expect(() => {
         createRefreshTokenPlugin({
           refreshTokenFn: mockRefreshTokenFn,
           getAuthToken: mockGetAuthToken,
           maxRetryAttempts: 0,
         });
-      }).toThrow("maxRetryAttempts must be an integer greater than or equal to 1");
+      }).toThrow('maxRetryAttempts must be an integer greater than or equal to 1');
     });
 
-    test("should throw error for non-integer maxRetryAttempts", () => {
+    test('should throw error for non-integer maxRetryAttempts', () => {
       expect(() => {
         createRefreshTokenPlugin({
           refreshTokenFn: mockRefreshTokenFn,
           getAuthToken: mockGetAuthToken,
           maxRetryAttempts: 1.5,
         });
-      }).toThrow("maxRetryAttempts must be an integer greater than or equal to 1");
+      }).toThrow('maxRetryAttempts must be an integer greater than or equal to 1');
     });
 
-    test("should throw error for invalid retryDelay", () => {
+    test('should throw error for invalid retryDelay', () => {
       expect(() => {
         createRefreshTokenPlugin({
           refreshTokenFn: mockRefreshTokenFn,
           getAuthToken: mockGetAuthToken,
           retryDelay: -1,
         });
-      }).toThrow("retryDelay must be a number greater than or equal to 0");
+      }).toThrow('retryDelay must be a number greater than or equal to 0');
     });
   });
 
-  describe("Request Interceptor", () => {
-    test("should add request interceptor when autoInjectToken is true", () => {
+  describe('Request Interceptor', () => {
+    test('should add request interceptor when autoInjectToken is true', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -138,10 +139,13 @@ describe("createRefreshTokenPlugin", () => {
 
       plugin(mockAxios);
 
-      expect(mockAxios.interceptors.request.use).toHaveBeenCalledWith(expect.any(Function), expect.any(Function));
+      expect(mockAxios.interceptors.request.use).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.any(Function),
+      );
     });
 
-    test("should not add request interceptor when autoInjectToken is false", () => {
+    test('should not add request interceptor when autoInjectToken is false', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -153,7 +157,7 @@ describe("createRefreshTokenPlugin", () => {
       expect(mockAxios.interceptors.request.use).not.toHaveBeenCalled();
     });
 
-    test("should inject token in request headers", () => {
+    test('should inject token in request headers', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -166,10 +170,10 @@ describe("createRefreshTokenPlugin", () => {
 
       const result = successHandler(config);
 
-      expect(result.headers.Authorization).toBe("Bearer current-token");
+      expect(result.headers.Authorization).toBe('Bearer current-token');
     });
 
-    test("should not override existing Authorization header", () => {
+    test('should not override existing Authorization header', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -180,16 +184,16 @@ describe("createRefreshTokenPlugin", () => {
       const [successHandler] = mockAxios.interceptors.request.use.mock.calls[0];
       const config = {
         headers: {
-          Authorization: "Bearer existing-token",
+          Authorization: 'Bearer existing-token',
         },
       };
 
       const result = successHandler(config);
 
-      expect(result.headers.Authorization).toBe("Bearer existing-token");
+      expect(result.headers.Authorization).toBe('Bearer existing-token');
     });
 
-    test("should handle missing headers object", () => {
+    test('should handle missing headers object', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -202,11 +206,11 @@ describe("createRefreshTokenPlugin", () => {
 
       const result = successHandler(config);
 
-      expect(result.headers.Authorization).toBe("Bearer current-token");
+      expect(result.headers.Authorization).toBe('Bearer current-token');
     });
   });
 
-  describe("Response Interceptor", () => {
+  describe('Response Interceptor', () => {
     let responseInterceptor: any;
 
     beforeEach(() => {
@@ -220,8 +224,8 @@ describe("createRefreshTokenPlugin", () => {
       responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
     });
 
-    test("should handle successful response", () => {
-      const response = { data: "test" };
+    test('should handle successful response', () => {
+      const response = { data: 'test' };
       const successHandler = mockAxios.interceptors.response.use.mock.calls[0][0];
 
       const result = successHandler(response);
@@ -229,12 +233,12 @@ describe("createRefreshTokenPlugin", () => {
       expect(result).toBe(response);
     });
 
-    test("should refresh token on 401 error", async () => {
+    test('should refresh token on 401 error', async () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
           headers: {},
         },
       };
@@ -245,20 +249,20 @@ describe("createRefreshTokenPlugin", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockRefreshTokenFn).toHaveBeenCalled();
-      expect(mockOnStatusChange).toHaveBeenCalledWith("refreshing");
+      expect(mockOnStatusChange).toHaveBeenCalledWith('refreshing');
 
       // Don't await the promise to avoid hanging
       expect(promise).toBeInstanceOf(Promise);
     });
 
-    test("should not refresh token if no auth token exists", async () => {
+    test('should not refresh token if no auth token exists', async () => {
       mockGetAuthToken.mockReturnValue(null);
 
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
         },
       };
 
@@ -266,12 +270,12 @@ describe("createRefreshTokenPlugin", () => {
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should not refresh token on non-401 response errors", async () => {
+    test('should not refresh token on non-401 response errors', async () => {
       const error = {
         response: { status: 403 },
         config: {
-          method: "GET",
-          url: "/forbidden",
+          method: 'GET',
+          url: '/forbidden',
         },
       };
 
@@ -279,12 +283,12 @@ describe("createRefreshTokenPlugin", () => {
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should refresh on network error when token exists (default shouldRefreshToken)", async () => {
+    test('should refresh on network error when token exists (default shouldRefreshToken)', async () => {
       const error = {
-        message: "Network Error",
+        message: 'Network Error',
         config: {
-          method: "GET",
-          url: "/network",
+          method: 'GET',
+          url: '/network',
           headers: {},
         },
       };
@@ -296,12 +300,12 @@ describe("createRefreshTokenPlugin", () => {
       expect(promise).toBeInstanceOf(Promise);
     });
 
-    test("should not retry request twice", async () => {
+    test('should not retry request twice', async () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
           headers: {},
           _retry: true, // Request already retried
         },
@@ -311,12 +315,12 @@ describe("createRefreshTokenPlugin", () => {
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should skip refresh when skipAuthRefresh is true", async () => {
+    test('should skip refresh when skipAuthRefresh is true', async () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
           skipAuthRefresh: true,
         },
       };
@@ -325,7 +329,7 @@ describe("createRefreshTokenPlugin", () => {
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should handle missing config", async () => {
+    test('should handle missing config', async () => {
       const error = {
         response: { status: 401 },
         // No config
@@ -336,7 +340,7 @@ describe("createRefreshTokenPlugin", () => {
     });
   });
 
-  describe("Token Refresh Logic", () => {
+  describe('Token Refresh Logic', () => {
     let responseInterceptor: any;
 
     beforeEach(() => {
@@ -351,35 +355,37 @@ describe("createRefreshTokenPlugin", () => {
       responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
     });
 
-    test("should handle refresh token failure", async () => {
-      const refreshError = new Error("Refresh failed");
+    test('should handle refresh token failure', async () => {
+      const refreshError = new Error('Refresh failed');
       mockRefreshTokenFn.mockRejectedValue(refreshError);
 
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
           headers: {},
         },
       };
 
       await expect(responseInterceptor(error)).rejects.toMatchObject({
-        message: "Token refresh failed",
+        message: 'Token refresh failed',
         originalError: refreshError,
       });
-      expect(mockOnStatusChange).toHaveBeenCalledWith("failed", refreshError);
+      expect(mockOnStatusChange).toHaveBeenCalledWith('failed', refreshError);
     });
 
-    test("should handle refresh timeout", async () => {
+    test('should handle refresh timeout', async () => {
       // Mock a slow refresh function that takes longer than timeout
-      const slowRefreshFn = vi.fn().mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve("token"), 200))
-      );
+      const slowRefreshFn = vi
+        .fn()
+        .mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve('token'), 200)),
+        );
 
       // Create a fresh mock axios for this test
       const timeoutMockAxios = createMockAxios();
-      timeoutMockAxios.mockImplementation = vi.fn().mockResolvedValue({ data: "retry-success" });
+      timeoutMockAxios.mockImplementation = vi.fn().mockResolvedValue({ data: 'retry-success' });
 
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: slowRefreshFn,
@@ -394,26 +400,26 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
           headers: {},
         },
       };
 
       // Test the timeout scenario
-      await expect(interceptor(error)).rejects.toThrow("Token refresh failed");
+      await expect(interceptor(error)).rejects.toThrow('Token refresh failed');
 
       // Wait a bit more to ensure the timeout has triggered
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      expect(mockOnStatusChange).toHaveBeenCalledWith("failed", expect.any(Error));
+      expect(mockOnStatusChange).toHaveBeenCalledWith('failed', expect.any(Error));
     }, 10000); // Increase test timeout to 10 seconds
 
-    test("retries refresh and succeeds before maxRetryAttempts", async () => {
+    test('retries refresh and succeeds before maxRetryAttempts', async () => {
       const retryingRefreshTokenFn = vi
         .fn()
-        .mockRejectedValueOnce(new Error("Temporary refresh failure"))
-        .mockResolvedValueOnce("retried-token");
+        .mockRejectedValueOnce(new Error('Temporary refresh failure'))
+        .mockResolvedValueOnce('retried-token');
 
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: retryingRefreshTokenFn,
@@ -430,8 +436,8 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/retry-success",
+          method: 'GET',
+          url: '/retry-success',
           headers: {},
         },
       };
@@ -440,14 +446,14 @@ describe("createRefreshTokenPlugin", () => {
 
       expect(retryingRefreshTokenFn).toHaveBeenCalledTimes(2);
       expect(mockAxios).toHaveBeenCalledTimes(1);
-      expect(mockOnStatusChange).toHaveBeenCalledWith("success");
+      expect(mockOnStatusChange).toHaveBeenCalledWith('success');
     });
 
-    test("fails after reaching maxRetryAttempts", async () => {
+    test('fails after reaching maxRetryAttempts', async () => {
       const alwaysFailRefreshTokenFn = vi
         .fn()
-        .mockRejectedValueOnce(new Error("attempt-1"))
-        .mockRejectedValueOnce(new Error("attempt-2"));
+        .mockRejectedValueOnce(new Error('attempt-1'))
+        .mockRejectedValueOnce(new Error('attempt-2'));
 
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: alwaysFailRefreshTokenFn,
@@ -464,27 +470,27 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/retry-fail",
+          method: 'GET',
+          url: '/retry-fail',
           headers: {},
         },
       };
 
       await expect(interceptor(error)).rejects.toMatchObject({
-        message: "Token refresh failed",
-        originalError: expect.objectContaining({ message: "attempt-2" }),
+        message: 'Token refresh failed',
+        originalError: expect.objectContaining({ message: 'attempt-2' }),
       });
 
       expect(alwaysFailRefreshTokenFn).toHaveBeenCalledTimes(2);
       expect(mockOnStatusChange).toHaveBeenCalledWith(
-        "failed",
-        expect.objectContaining({ message: "attempt-2" })
+        'failed',
+        expect.objectContaining({ message: 'attempt-2' }),
       );
     });
   });
 
-  describe("Custom Options", () => {
-    test("should use custom shouldRefreshToken function", async () => {
+  describe('Custom Options', () => {
+    test('should use custom shouldRefreshToken function', async () => {
       mockShouldRefreshToken.mockReturnValue(false);
 
       const plugin = createRefreshTokenPlugin({
@@ -499,8 +505,8 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
         },
       };
 
@@ -510,8 +516,8 @@ describe("createRefreshTokenPlugin", () => {
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should use custom auth header formatter", async () => {
-      const customFormatter = vi.fn().mockReturnValue("Custom new-token");
+    test('should use custom auth header formatter', async () => {
+      const customFormatter = vi.fn().mockReturnValue('Custom new-token');
 
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
@@ -525,18 +531,18 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
           headers: {},
         },
       };
 
       await responseInterceptor(error);
-      expect(customFormatter).toHaveBeenCalledWith("new-token");
+      expect(customFormatter).toHaveBeenCalledWith('new-token');
     });
 
-    test("should surface shouldRefreshToken errors through onStatusChange", async () => {
-      const shouldRefreshError = new Error("should-refresh-exploded");
+    test('should surface shouldRefreshToken errors through onStatusChange', async () => {
+      const shouldRefreshError = new Error('should-refresh-exploded');
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -552,22 +558,22 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
         },
       };
 
       await expect(responseInterceptor(error)).rejects.toBe(shouldRefreshError);
-      expect(mockOnStatusChange).toHaveBeenCalledWith("error", shouldRefreshError);
+      expect(mockOnStatusChange).toHaveBeenCalledWith('error', shouldRefreshError);
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should normalize non-Error thrown values in shouldRefreshToken", async () => {
+    test('should normalize non-Error thrown values in shouldRefreshToken', async () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
         shouldRefreshToken: () => {
-          throw "bad-throw";
+          throw 'bad-throw';
         },
         onStatusChange: mockOnStatusChange,
       });
@@ -578,23 +584,23 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
         },
       };
 
       await expect(responseInterceptor(error)).rejects.toMatchObject({
-        message: "Unknown error in refresh token interceptor",
+        message: 'Unknown error in refresh token interceptor',
       });
       expect(mockOnStatusChange).toHaveBeenCalledWith(
-        "error",
-        expect.objectContaining({ message: "Unknown error in refresh token interceptor" })
+        'error',
+        expect.objectContaining({ message: 'Unknown error in refresh token interceptor' }),
       );
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should surface getRequestKey errors through onStatusChange", async () => {
-      const requestKeyError = new Error("request-key-exploded");
+    test('should surface getRequestKey errors through onStatusChange', async () => {
+      const requestKeyError = new Error('request-key-exploded');
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -610,25 +616,25 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/test",
+          method: 'GET',
+          url: '/test',
         },
       };
 
       await expect(responseInterceptor(error)).rejects.toBe(requestKeyError);
-      expect(mockOnStatusChange).toHaveBeenCalledWith("error", requestKeyError);
+      expect(mockOnStatusChange).toHaveBeenCalledWith('error', requestKeyError);
       expect(mockRefreshTokenFn).not.toHaveBeenCalled();
     });
 
-    test("should reject queued requests when enqueue fails during active refresh", async () => {
-      const requestKeyError = new Error("request-key-exploded-during-refresh");
+    test('should reject queued requests when enqueue fails during active refresh', async () => {
+      const requestKeyError = new Error('request-key-exploded-during-refresh');
       const deferredRefresh = new Promise<string | null>(() => {});
 
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: () => deferredRefresh,
         getAuthToken: mockGetAuthToken,
         getRequestKey: (request) => {
-          if (request.url === "/second") {
+          if (request.url === '/second') {
             throw requestKeyError;
           }
           return `${request.method}-${request.url}`;
@@ -642,16 +648,16 @@ describe("createRefreshTokenPlugin", () => {
       const firstError = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/first",
+          method: 'GET',
+          url: '/first',
           headers: {},
         },
       };
       const secondError = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/second",
+          method: 'GET',
+          url: '/second',
           headers: {},
         },
       };
@@ -664,15 +670,15 @@ describe("createRefreshTokenPlugin", () => {
       await expect(responseInterceptor(secondError)).rejects.toBe(requestKeyError);
 
       await expect(firstHandled).resolves.toMatchObject({
-        message: "Token refresh failed",
+        message: 'Token refresh failed',
         originalError: requestKeyError,
       });
-      expect(mockOnStatusChange).toHaveBeenCalledWith("error", requestKeyError);
+      expect(mockOnStatusChange).toHaveBeenCalledWith('error', requestKeyError);
     });
   });
 
-  describe("Cleanup", () => {
-    test("should return cleanup function", () => {
+  describe('Cleanup', () => {
+    test('should return cleanup function', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -680,10 +686,10 @@ describe("createRefreshTokenPlugin", () => {
 
       const cleanup = plugin(mockAxios);
 
-      expect(typeof cleanup).toBe("function");
+      expect(typeof cleanup).toBe('function');
     });
 
-    test("should clean up state when cleanup is called", () => {
+    test('should clean up state when cleanup is called', () => {
       const plugin = createRefreshTokenPlugin({
         refreshTokenFn: mockRefreshTokenFn,
         getAuthToken: mockGetAuthToken,
@@ -694,7 +700,7 @@ describe("createRefreshTokenPlugin", () => {
       expect(() => cleanup()).not.toThrow();
     });
 
-    test("should reject pending queued requests on cleanup", async () => {
+    test('should reject pending queued requests on cleanup', async () => {
       const deferredRefresh = new Promise<string | null>(() => {});
       const refreshSpy = vi.fn(() => deferredRefresh);
       const plugin = createRefreshTokenPlugin({
@@ -707,8 +713,8 @@ describe("createRefreshTokenPlugin", () => {
       const error = {
         response: { status: 401 },
         config: {
-          method: "GET",
-          url: "/pending-cleanup",
+          method: 'GET',
+          url: '/pending-cleanup',
           headers: {},
         },
       };
@@ -718,25 +724,25 @@ describe("createRefreshTokenPlugin", () => {
       expect(refreshSpy).toHaveBeenCalledTimes(1);
 
       const settledRequest = requestPromise.then(
-        (value) => ({ status: "fulfilled" as const, value }),
-        (reason) => ({ status: "rejected" as const, reason })
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason) => ({ status: 'rejected' as const, reason }),
       );
 
       cleanup();
 
       const settled = await settledRequest;
-      expect(settled.status).toBe("rejected");
-      if (settled.status === "rejected") {
+      expect(settled.status).toBe('rejected');
+      if (settled.status === 'rejected') {
         expect(settled.reason).toMatchObject({
-          message: "Token refresh failed",
-          originalError: expect.objectContaining({ message: "Refresh interceptor cleaned up" }),
+          message: 'Token refresh failed',
+          originalError: expect.objectContaining({ message: 'Refresh interceptor cleaned up' }),
         });
       }
     });
   });
 });
 
-describe("Queue handling", () => {
+describe('Queue handling', () => {
   const mockRefreshTokenFn = vi.fn();
   const mockGetAuthToken = vi.fn();
 
@@ -745,13 +751,13 @@ describe("Queue handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAxios = createMockAxios();
-    mockAxios.mockResolvedValue({ data: "retry-success" });
-    mockAxios.request.mockResolvedValue({ data: "retry-success" });
-    mockRefreshTokenFn.mockResolvedValue("queue-token");
-    mockGetAuthToken.mockReturnValue("current-token");
+    mockAxios.mockResolvedValue({ data: 'retry-success' });
+    mockAxios.request.mockResolvedValue({ data: 'retry-success' });
+    mockRefreshTokenFn.mockResolvedValue('queue-token');
+    mockGetAuthToken.mockReturnValue('current-token');
   });
 
-  test("deduplicates simultaneous requests", async () => {
+  test('deduplicates simultaneous requests', async () => {
     const plugin = createRefreshTokenPlugin({
       refreshTokenFn: mockRefreshTokenFn,
       getAuthToken: mockGetAuthToken,
@@ -762,11 +768,11 @@ describe("Queue handling", () => {
 
     const error1 = {
       response: { status: 401 },
-      config: { method: "GET", url: "/same" },
+      config: { method: 'GET', url: '/same' },
     };
     const error2 = {
       response: { status: 401 },
-      config: { method: "GET", url: "/same" },
+      config: { method: 'GET', url: '/same' },
     };
 
     const p1 = responseInterceptor(error1);
@@ -779,7 +785,7 @@ describe("Queue handling", () => {
     expect(mockAxios).toHaveBeenCalledTimes(1);
   });
 
-  test("resolves queued requests with new token", async () => {
+  test('resolves queued requests with new token', async () => {
     const plugin = createRefreshTokenPlugin({
       refreshTokenFn: mockRefreshTokenFn,
       getAuthToken: mockGetAuthToken,
@@ -790,7 +796,7 @@ describe("Queue handling", () => {
 
     const error = {
       response: { status: 401 },
-      config: { method: "GET", url: "/queue", headers: {} },
+      config: { method: 'GET', url: '/queue', headers: {} },
     };
 
     const promise = responseInterceptor(error);
@@ -799,16 +805,16 @@ describe("Queue handling", () => {
 
     expect(mockAxios).toHaveBeenCalledWith(
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer queue-token" }),
-      })
+        headers: expect.objectContaining({ Authorization: 'Bearer queue-token' }),
+      }),
     );
   });
 
-  test("uses custom getRequestKey for dedupe", async () => {
+  test('uses custom getRequestKey for dedupe', async () => {
     const plugin = createRefreshTokenPlugin({
       refreshTokenFn: mockRefreshTokenFn,
       getAuthToken: mockGetAuthToken,
-      getRequestKey: () => "same-custom-key",
+      getRequestKey: () => 'same-custom-key',
     });
 
     plugin(mockAxios);
@@ -816,25 +822,29 @@ describe("Queue handling", () => {
 
     const error1 = {
       response: { status: 401 },
-      config: { method: "GET", url: "/first", params: { a: 1 } },
+      config: { method: 'GET', url: '/first', params: { a: 1 } },
     };
     const error2 = {
       response: { status: 401 },
-      config: { method: "GET", url: "/second", params: { b: 2 } },
+      config: { method: 'GET', url: '/second', params: { b: 2 } },
     };
 
-    const [result1, result2] = await Promise.all([responseInterceptor(error1), responseInterceptor(error2)]);
+    const [result1, result2] = await Promise.all([
+      responseInterceptor(error1),
+      responseInterceptor(error2),
+    ]);
 
     expect(result1).toStrictEqual(result2);
     expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
     expect(mockAxios).toHaveBeenCalledTimes(1);
   });
 
-  test("custom getRequestKey can prevent dedupe collisions", async () => {
+  test('custom getRequestKey can prevent dedupe collisions', async () => {
     const plugin = createRefreshTokenPlugin({
       refreshTokenFn: mockRefreshTokenFn,
       getAuthToken: mockGetAuthToken,
-      getRequestKey: (request) => `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`,
+      getRequestKey: (request) =>
+        `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`,
     });
 
     plugin(mockAxios);
@@ -842,11 +852,11 @@ describe("Queue handling", () => {
 
     const error1 = {
       response: { status: 401 },
-      config: { method: "POST", url: "/same", data: { payload: 1 } },
+      config: { method: 'POST', url: '/same', data: { payload: 1 } },
     };
     const error2 = {
       response: { status: 401 },
-      config: { method: "POST", url: "/same", data: { payload: 2 } },
+      config: { method: 'POST', url: '/same', data: { payload: 2 } },
     };
 
     await Promise.all([responseInterceptor(error1), responseInterceptor(error2)]);
@@ -856,32 +866,32 @@ describe("Queue handling", () => {
   });
 });
 
-describe("tryCatch", () => {
-  test("returns success tuple for synchronous operations", () => {
+describe('tryCatch', () => {
+  test('returns success tuple for synchronous operations', () => {
     const result = tryCatch(() => 42);
 
     expect(result).toStrictEqual([42, null]);
   });
 
-  test("returns failure tuple for synchronous errors", () => {
+  test('returns failure tuple for synchronous errors', () => {
     const result = tryCatch(() => {
-      throw new Error("sync-fail");
+      throw new Error('sync-fail');
     });
 
     expect(result[0]).toBeNull();
-    expect((result[1] as Error)?.message).toBe("sync-fail");
+    expect((result[1] as Error)?.message).toBe('sync-fail');
   });
 
-  test("returns success tuple for promise operations", async () => {
-    const result = await tryCatch(Promise.resolve("ok"));
+  test('returns success tuple for promise operations', async () => {
+    const result = await tryCatch(Promise.resolve('ok'));
 
-    expect(result).toStrictEqual(["ok", null]);
+    expect(result).toStrictEqual(['ok', null]);
   });
 
-  test("returns failure tuple for rejected promises", async () => {
-    const result = await tryCatch(Promise.reject(new Error("async-fail")));
+  test('returns failure tuple for rejected promises', async () => {
+    const result = await tryCatch(Promise.reject(new Error('async-fail')));
 
     expect(result[0]).toBeNull();
-    expect((result[1] as Error)?.message).toBe("async-fail");
+    expect((result[1] as Error)?.message).toBe('async-fail');
   });
 });

@@ -1,7 +1,8 @@
-import axios from "axios";
-import MockAdapter from "axios-mock-adapter";
-import { afterEach, describe, expect, test } from "vitest";
-import { createRefreshTokenPlugin } from "../src/index";
+import axios from 'axios';
+import MockAdapter from 'axios-mock-adapter';
+import { afterEach, describe, expect, test } from 'vitest';
+
+import { createRefreshTokenPlugin } from '../src/index';
 
 type CleanupContext = {
   cleanup: () => void;
@@ -23,36 +24,36 @@ afterEach(() => {
   }
 });
 
-describe("integration: real axios interceptors", () => {
-  test("retries refreshTokenFn and succeeds before maxRetryAttempts", async () => {
+describe('integration: real axios interceptors', () => {
+  test('retries refreshTokenFn and succeeds before maxRetryAttempts', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
     const authMock = new MockAdapter(authClient);
 
-    let token = "stale-token";
+    let token = 'stale-token';
     let refreshAttempts = 0;
 
-    apiMock.onGet("/protected").reply((config) => {
-      if (config.headers?.Authorization === "Bearer fresh-token") {
+    apiMock.onGet('/protected').reply((config) => {
+      if (config.headers?.Authorization === 'Bearer fresh-token') {
         return [200, { ok: true }];
       }
-      return [401, { code: "expired" }];
+      return [401, { code: 'expired' }];
     });
 
-    authMock.onPost("/refresh").reply(() => {
+    authMock.onPost('/refresh').reply(() => {
       refreshAttempts += 1;
       if (refreshAttempts < 2) {
-        return [500, { error: "temporary" }];
+        return [500, { error: 'temporary' }];
       }
-      token = "fresh-token";
+      token = 'fresh-token';
       return [200, { token }];
     });
 
     const cleanup = createRefreshTokenPlugin({
       getAuthToken: () => token,
       refreshTokenFn: async () => {
-        const response = await authClient.post("/refresh");
+        const response = await authClient.post('/refresh');
         return response.data.token;
       },
       maxRetryAttempts: 2,
@@ -63,7 +64,7 @@ describe("integration: real axios interceptors", () => {
     contexts.push({ cleanup, apiMock, authMock });
 
     const startedAt = Date.now();
-    const response = await apiClient.get("/protected");
+    const response = await apiClient.get('/protected');
     const elapsedMs = Date.now() - startedAt;
 
     expect(response.status).toBe(200);
@@ -72,26 +73,26 @@ describe("integration: real axios interceptors", () => {
     expect(elapsedMs).toBeGreaterThanOrEqual(25);
   });
 
-  test("rejects queued request after maxRetryAttempts is exhausted", async () => {
+  test('rejects queued request after maxRetryAttempts is exhausted', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
     const authMock = new MockAdapter(authClient);
 
-    let token = "stale-token";
+    let token = 'stale-token';
     let refreshAttempts = 0;
 
-    apiMock.onGet("/protected").reply(401, { code: "expired" });
+    apiMock.onGet('/protected').reply(401, { code: 'expired' });
 
-    authMock.onPost("/refresh").reply(() => {
+    authMock.onPost('/refresh').reply(() => {
       refreshAttempts += 1;
-      return [500, { error: "still-broken" }];
+      return [500, { error: 'still-broken' }];
     });
 
     const cleanup = createRefreshTokenPlugin({
       getAuthToken: () => token,
       refreshTokenFn: async () => {
-        const response = await authClient.post("/refresh");
+        const response = await authClient.post('/refresh');
         return response.data.token;
       },
       maxRetryAttempts: 2,
@@ -101,27 +102,27 @@ describe("integration: real axios interceptors", () => {
 
     contexts.push({ cleanup, apiMock, authMock });
 
-    await expect(apiClient.get("/protected")).rejects.toMatchObject({
-      message: "Token refresh failed",
+    await expect(apiClient.get('/protected')).rejects.toMatchObject({
+      message: 'Token refresh failed',
       originalError: expect.any(Error),
     });
     expect(refreshAttempts).toBe(2);
   });
 
-  test("skipAuthRefresh bypasses refresh flow for a request", async () => {
+  test('skipAuthRefresh bypasses refresh flow for a request', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
     const authMock = new MockAdapter(authClient);
 
-    let token = "stale-token";
-    apiMock.onGet("/public").reply(401, { code: "auth-required" });
-    authMock.onPost("/refresh").reply(200, { token: "fresh-token" });
+    let token = 'stale-token';
+    apiMock.onGet('/public').reply(401, { code: 'auth-required' });
+    authMock.onPost('/refresh').reply(200, { token: 'fresh-token' });
 
     const cleanup = createRefreshTokenPlugin({
       getAuthToken: () => token,
       refreshTokenFn: async () => {
-        const response = await authClient.post("/refresh");
+        const response = await authClient.post('/refresh');
         token = response.data.token;
         return token;
       },
@@ -131,9 +132,9 @@ describe("integration: real axios interceptors", () => {
     contexts.push({ cleanup, apiMock, authMock });
 
     await expect(
-      apiClient.get("/public", {
+      apiClient.get('/public', {
         skipAuthRefresh: true,
-      } as any)
+      } as any),
     ).rejects.toMatchObject({
       response: {
         status: 401,
@@ -143,32 +144,32 @@ describe("integration: real axios interceptors", () => {
     expect(authMock.history.post.length).toBe(0);
   });
 
-  test("getRequestKey can avoid dedupe collisions for same endpoint with different payloads", async () => {
+  test('getRequestKey can avoid dedupe collisions for same endpoint with different payloads', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
     const authMock = new MockAdapter(authClient);
 
-    let token = "stale-token";
+    let token = 'stale-token';
     let refreshAttempts = 0;
 
-    apiMock.onPost("/items").reply((config) => {
-      if (config.headers?.Authorization !== "Bearer fresh-token") {
-        return [401, { code: "expired" }];
+    apiMock.onPost('/items').reply((config) => {
+      if (config.headers?.Authorization !== 'Bearer fresh-token') {
+        return [401, { code: 'expired' }];
       }
       return [200, { echoed: JSON.parse(config.data) }];
     });
 
-    authMock.onPost("/refresh").reply(() => {
+    authMock.onPost('/refresh').reply(() => {
       refreshAttempts += 1;
-      token = "fresh-token";
+      token = 'fresh-token';
       return [200, { token }];
     });
 
     const cleanup = createRefreshTokenPlugin({
       getAuthToken: () => token,
       refreshTokenFn: async () => {
-        const response = await authClient.post("/refresh");
+        const response = await authClient.post('/refresh');
         return response.data.token;
       },
       getRequestKey: (request) => {
@@ -180,8 +181,8 @@ describe("integration: real axios interceptors", () => {
     contexts.push({ cleanup, apiMock, authMock });
 
     const [first, second] = await Promise.all([
-      apiClient.post("/items", { id: 1 }),
-      apiClient.post("/items", { id: 2 }),
+      apiClient.post('/items', { id: 1 }),
+      apiClient.post('/items', { id: 2 }),
     ]);
 
     expect(first.data).toStrictEqual({ echoed: { id: 1 } });
@@ -190,32 +191,32 @@ describe("integration: real axios interceptors", () => {
     expect(apiMock.history.post.length).toBe(4);
   });
 
-  test("deduplicates high concurrency bursts with default request key", async () => {
+  test('deduplicates high concurrency bursts with default request key', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
     const authMock = new MockAdapter(authClient);
 
-    let token = "stale-token";
+    let token = 'stale-token';
     let refreshAttempts = 0;
 
-    apiMock.onGet("/burst").reply((config) => {
-      if (config.headers?.Authorization === "Bearer fresh-token") {
+    apiMock.onGet('/burst').reply((config) => {
+      if (config.headers?.Authorization === 'Bearer fresh-token') {
         return [200, { ok: true }];
       }
-      return [401, { code: "expired" }];
+      return [401, { code: 'expired' }];
     });
 
-    authMock.onPost("/refresh").reply(() => {
+    authMock.onPost('/refresh').reply(() => {
       refreshAttempts += 1;
-      token = "fresh-token";
+      token = 'fresh-token';
       return [200, { token }];
     });
 
     const cleanup = createRefreshTokenPlugin({
       getAuthToken: () => token,
       refreshTokenFn: async () => {
-        const response = await authClient.post("/refresh");
+        const response = await authClient.post('/refresh');
         return response.data.token;
       },
       onStatusChange: () => {},
@@ -225,8 +226,8 @@ describe("integration: real axios interceptors", () => {
 
     const responses = await Promise.all(
       Array.from({ length: 25 }, () => {
-        return apiClient.get("/burst");
-      })
+        return apiClient.get('/burst');
+      }),
     );
 
     expect(refreshAttempts).toBe(1);
@@ -235,37 +236,37 @@ describe("integration: real axios interceptors", () => {
     expect(apiMock.history.get.length).toBe(26);
   });
 
-  test("timeout retries are bounded and delayed before succeeding", async () => {
+  test('timeout retries are bounded and delayed before succeeding', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
     const authMock = new MockAdapter(authClient);
 
-    let token = "stale-token";
+    let token = 'stale-token';
     let refreshAttempts = 0;
 
-    apiMock.onGet("/timed").reply((config) => {
-      if (config.headers?.Authorization === "Bearer fresh-token") {
+    apiMock.onGet('/timed').reply((config) => {
+      if (config.headers?.Authorization === 'Bearer fresh-token') {
         return [200, { ok: true }];
       }
-      return [401, { code: "expired" }];
+      return [401, { code: 'expired' }];
     });
 
-    authMock.onPost("/refresh").reply(() => {
+    authMock.onPost('/refresh').reply(() => {
       refreshAttempts += 1;
       if (refreshAttempts < 3) {
         return new Promise((resolve) => {
-          setTimeout(() => resolve([200, { token: "late-token" }]), 60);
+          setTimeout(() => resolve([200, { token: 'late-token' }]), 60);
         });
       }
-      token = "fresh-token";
+      token = 'fresh-token';
       return [200, { token }];
     });
 
     const cleanup = createRefreshTokenPlugin({
       getAuthToken: () => token,
       refreshTokenFn: async () => {
-        const response = await authClient.post("/refresh");
+        const response = await authClient.post('/refresh');
         return response.data.token;
       },
       refreshTimeout: 30,
@@ -277,7 +278,7 @@ describe("integration: real axios interceptors", () => {
     contexts.push({ cleanup, apiMock, authMock });
 
     const startedAt = Date.now();
-    const response = await apiClient.get("/timed");
+    const response = await apiClient.get('/timed');
     const elapsedMs = Date.now() - startedAt;
 
     expect(response.status).toBe(200);
@@ -285,22 +286,22 @@ describe("integration: real axios interceptors", () => {
     expect(elapsedMs).toBeGreaterThanOrEqual(90);
   });
 
-  test("refresh returning null does not force auth header on retried request", async () => {
+  test('refresh returning null does not force auth header on retried request', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
     const authMock = new MockAdapter(authClient);
 
-    let token: string | null = "stale-token";
+    let token: string | null = 'stale-token';
 
-    apiMock.onGet("/nullable").reply((config) => {
-      if (config.headers?.Authorization === "Bearer fresh-token") {
+    apiMock.onGet('/nullable').reply((config) => {
+      if (config.headers?.Authorization === 'Bearer fresh-token') {
         return [200, { ok: true }];
       }
-      return [401, { code: "expired" }];
+      return [401, { code: 'expired' }];
     });
 
-    authMock.onPost("/refresh").reply(() => {
+    authMock.onPost('/refresh').reply(() => {
       token = null;
       return [200, { token: null }];
     });
@@ -308,7 +309,7 @@ describe("integration: real axios interceptors", () => {
     const cleanup = createRefreshTokenPlugin({
       getAuthToken: () => token,
       refreshTokenFn: async () => {
-        const response = await authClient.post("/refresh");
+        const response = await authClient.post('/refresh');
         return response.data.token;
       },
       onStatusChange: () => {},
@@ -316,7 +317,7 @@ describe("integration: real axios interceptors", () => {
 
     contexts.push({ cleanup, apiMock, authMock });
 
-    await expect(apiClient.get("/nullable")).rejects.toMatchObject({
+    await expect(apiClient.get('/nullable')).rejects.toMatchObject({
       response: {
         status: 401,
       },
@@ -324,5 +325,4 @@ describe("integration: real axios interceptors", () => {
     expect(authMock.history.post.length).toBe(1);
     expect(apiMock.history.get.length).toBe(2);
   });
-
 });

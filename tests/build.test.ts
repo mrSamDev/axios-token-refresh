@@ -1,16 +1,13 @@
-import { describe, test, expect } from "vitest";
-import { build as viteBuild } from "vite";
-import fs from "node:fs/promises";
-import path from "node:path";
-import os from "node:os";
-import config from "../vite.config.mjs";
+import { execSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-const requiredBuildFiles = [
-  "index.js",
-  "index.esm.js",
-];
+import { describe, test, expect } from 'vitest';
 
-const fileExists = async (filePath) => {
+const requiredBuildFiles = ['index.mjs', 'index.cjs', 'index.d.cts', 'index.d.mts'];
+
+const fileExists = async (filePath: string) => {
   try {
     await fs.access(filePath);
     return true;
@@ -19,32 +16,20 @@ const fileExists = async (filePath) => {
   }
 };
 
-describe("build pipeline", () => {
-  test(
-    "emits expected artifacts",
-    async () => {
-      const outDir = path.join(os.tmpdir(), "axios-token-refresh-build");
+describe('build pipeline', () => {
+  test('emits expected artifacts', async () => {
+    const outDir = path.join(os.tmpdir(), 'axios-token-refresh-build');
 
-      // Clean target dir in case a prior run left artifacts
-      await fs.rm(outDir, { recursive: true, force: true });
+    // Clean target dir in case a prior run left artifacts
+    await fs.rm(outDir, { recursive: true, force: true });
 
-      await viteBuild({
-        ...config,
-        build: {
-          ...config.build,
-          outDir,
-        },
-      });
+    execSync(`pnpm exec tsdown --out-dir ${outDir}`, {
+      stdio: 'pipe',
+    });
 
-      for (const file of requiredBuildFiles) {
-        const exists = await fileExists(path.join(outDir, file));
-        expect(exists).toBe(true);
-      }
-
-      // Declarations should be emitted alongside build artifacts.
-      const declarationExists = await fileExists(path.join(outDir, "index.d.ts"));
-      expect(declarationExists).toBe(true);
-    },
-    30000
-  );
+    for (const file of requiredBuildFiles) {
+      const exists = await fileExists(path.join(outDir, file));
+      expect(exists).toBe(true);
+    }
+  }, 30000);
 });

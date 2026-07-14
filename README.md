@@ -43,9 +43,11 @@ yarn add @mrsamdev/axios-token-refresh
 ## Development
 
 - Typecheck: `pnpm typecheck`
-- Build: `pnpm build` (Vite library mode; outputs CJS/ESM + minified variants to `dist/`)
+- Build: `pnpm build` (tsdown; outputs CJS/ESM + type declarations to `dist/`)
 - Tests: `pnpm test` (Vitest, node environment)
 - Coverage: `pnpm test:coverage`
+- Format: `pnpm fmt` (oxfmt) / `pnpm fmt:check`
+- Lint: `pnpm lint`
 - Library source: `src/index.ts`
 
 ## Usage
@@ -53,14 +55,14 @@ yarn add @mrsamdev/axios-token-refresh
 ### Basic Example
 
 ```javascript
-import axios from "axios";
-import { createRefreshTokenPlugin } from "@mrsamdev/axios-token-refresh";
+import axios from 'axios';
+import { createRefreshTokenPlugin } from '@mrsamdev/axios-token-refresh';
 
 // Create an axios instance
 const apiClient = axios.create({
-  baseURL: "https://api.example.com",
+  baseURL: 'https://api.example.com',
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
@@ -69,18 +71,18 @@ const refreshPlugin = createRefreshTokenPlugin({
   // Function to refresh the token
   refreshTokenFn: async () => {
     // Implement your token refresh logic here
-    const response = await axios.post("https://api.example.com/refresh-token", {
-      refresh_token: localStorage.getItem("refreshToken"),
+    const response = await axios.post('https://api.example.com/refresh-token', {
+      refresh_token: localStorage.getItem('refreshToken'),
     });
 
     const newToken = response.data.access_token;
-    localStorage.setItem("token", newToken);
+    localStorage.setItem('token', newToken);
 
     return newToken;
   },
 
   // Function to get the current token
-  getAuthToken: () => localStorage.getItem("token"),
+  getAuthToken: () => localStorage.getItem('token'),
 
   // Optional: Custom condition for when to refresh token
   shouldRefreshToken: (error) => error.response && error.response.status === 401,
@@ -89,7 +91,7 @@ const refreshPlugin = createRefreshTokenPlugin({
   onStatusChange: (status, error) => {
     console.log(`Token refresh status: ${status}`);
     if (error) {
-      console.error("Token refresh error:", error);
+      console.error('Token refresh error:', error);
     }
     // status can be: "refreshing", "success", "failed", "error"
   },
@@ -115,7 +117,8 @@ const refreshPlugin = createRefreshTokenPlugin({
   refreshTimeout: 15000, // 15 seconds timeout (default: 10000ms)
   maxRetryAttempts: 3, // Total refresh attempts including the initial attempt
   retryDelay: 300, // Delay in ms between refresh retry attempts
-  getRequestKey: (request) => `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`,
+  getRequestKey: (request) =>
+    `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`,
 
   shouldRefreshToken: (error) => {
     // Custom logic to determine when to refresh the token
@@ -123,9 +126,9 @@ const refreshPlugin = createRefreshTokenPlugin({
       // Refresh on 401 Unauthorized
       (error.response && error.response.status === 401) ||
       // Refresh on specific error message
-      (error.response && error.response.data && error.response.data.error === "token_expired") ||
+      (error.response && error.response.data && error.response.data.error === 'token_expired') ||
       // Refresh on network errors when token exists
-      (error.message === "Network Error" && localStorage.getItem("token"))
+      (error.message === 'Network Error' && localStorage.getItem('token'))
     );
   },
 });
@@ -136,7 +139,7 @@ const refreshPlugin = createRefreshTokenPlugin({
 Use `skipAuthRefresh: true` to bypass refresh logic for endpoints like login/logout/refresh:
 
 ```typescript
-apiClient.get("/public-profile", {
+apiClient.get('/public-profile', {
   skipAuthRefresh: true,
 });
 ```
@@ -144,9 +147,9 @@ apiClient.get("/public-profile", {
 If TypeScript complains about this custom config property, add module augmentation once in your project:
 
 ```typescript
-import "axios";
+import 'axios';
 
-declare module "axios" {
+declare module 'axios' {
   interface InternalAxiosRequestConfig {
     skipAuthRefresh?: boolean;
   }
@@ -158,16 +161,16 @@ declare module "axios" {
 For TypeScript projects, you can take advantage of the built-in type definitions:
 
 ```typescript
-import axios, { AxiosError } from "axios";
-import { createRefreshTokenPlugin, RefreshTokenPluginOptions } from "@mrsamdev/axios-token-refresh";
+import axios, { AxiosError } from 'axios';
+import { createRefreshTokenPlugin, RefreshTokenPluginOptions } from '@mrsamdev/axios-token-refresh';
 
 // Create plugin with full type support
 const options: RefreshTokenPluginOptions = {
   refreshTokenFn: async () => {
     // Implementation with full type checking
-    return "new-token";
+    return 'new-token';
   },
-  getAuthToken: () => localStorage.getItem("token"),
+  getAuthToken: () => localStorage.getItem('token'),
   shouldRefreshToken: (error: AxiosError) => {
     return !!error.response && error.response.status === 401;
   },
@@ -191,10 +194,10 @@ Creates an Axios interceptor plugin that handles token refresh.
 | `shouldRefreshToken`  | `(error: AxiosError, originalRequest: object) => boolean` | No       | Checks for 401 status or network errors | Function that determines if token refresh should be triggered.                                                             |
 | `onStatusChange`      | `(status: string, error?: Error) => void`                 | No       | Console log function                    | Callback for token refresh status updates with error details. Status can be "refreshing", "success", "failed", or "error". |
 | `authHeaderFormatter` | `(token: string) => string`                               | No       | `(token) => Bearer ${token}`            | Function to format the authorization header value.                                                                         |
-| `getRequestKey`       | `(request: AxiosRequestConfig) => string`                 | No       | `method-url-params`                     | Custom dedupe key for queued retries. Use this to include fields like `data` to avoid collisions.                         |
+| `getRequestKey`       | `(request: AxiosRequestConfig) => string`                 | No       | `method-url-params`                     | Custom dedupe key for queued retries. Use this to include fields like `data` to avoid collisions.                          |
 | `refreshTimeout`      | `number`                                                  | No       | `10000` (10 seconds)                    | Timeout for token refresh operation in milliseconds.                                                                       |
-| `maxRetryAttempts`    | `number`                                                  | No       | `1`                                     | Number of refresh attempts before failing. Must be an integer greater than or equal to 1.                                 |
-| `retryDelay`          | `number`                                                  | No       | `0`                                     | Delay in milliseconds between refresh retry attempts. Must be greater than or equal to 0.                                 |
+| `maxRetryAttempts`    | `number`                                                  | No       | `1`                                     | Number of refresh attempts before failing. Must be an integer greater than or equal to 1.                                  |
+| `retryDelay`          | `number`                                                  | No       | `0`                                     | Delay in milliseconds between refresh retry attempts. Must be greater than or equal to 0.                                  |
 
 ## How It Works
 

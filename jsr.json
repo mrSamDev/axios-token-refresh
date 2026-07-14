@@ -1,0 +1,8 @@
+{
+  "name": "@mrsamdev/axios-token-refresh",
+  "version": "0.1.3",
+  "exports": "./src/index.ts",
+  "publish": {
+    "include": ["src/**/*.ts", "README.md", "LICENSE", "package.json"]
+  }
+}
