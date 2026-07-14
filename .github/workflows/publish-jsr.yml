@@ -1,0 +1,36 @@
+name: Publish to JSR
+
+on:
+  push:
+    tags: ['d*']
+  workflow_dispatch:
+
+concurrency:
+  group: publish-jsr
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # JSR supports tokenless publishing from GitHub Actions via OIDC.
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Verify release tag
+        run: |
+          if ! git describe --tags --exact-match HEAD >/dev/null 2>&1; then
+            echo "::error::Refusing to publish: HEAD is not an exact version tag."
+            echo "When triggering via workflow_dispatch, select a tag ref, not a branch."
+            exit 1
+          fi
+          TAG="$(git describe --tags --exact-match HEAD)"
+          echo "Publishing from tag: $TAG"
+      - name: Type-check
+        run: deno check src/index.ts
+      - name: Publish to JSR
+        run: deno publish
