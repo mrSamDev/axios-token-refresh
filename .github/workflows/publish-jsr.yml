@@ -33,6 +33,10 @@ jobs:
       - name: Install dependencies
         run: |
           rm -f pnpm-lock.yaml deno.lock
+          # Strip devDependencies — only axios (peerDep) is needed for type-checking.
+          # devDeps (eslint, vitest, tsdown, oxfmt) are irrelevant to Deno and
+          # some can't be resolved by Deno's minimum-dependency-date check.
+          node -e "const p=require('./package.json'); delete p.devDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')"
           deno install
       - name: Type-check
         run: deno check src/index.ts
