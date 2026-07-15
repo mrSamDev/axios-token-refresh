@@ -35,8 +35,9 @@
 
 import { createRefreshTokenPlugin } from './refresh-token-plugin';
 
-export type { RefreshTokenPluginOptions } from './refresh-token-plugin';
-export type { RefreshStatus } from './refresh-token-plugin';
+export type { RefreshTokenPluginOptions, RefreshStatus } from './refresh-token-plugin';
+export type { AccessTokenStore } from './access-token-store';
+export { createLocalStorageTokenStore, createSessionStorageTokenStore } from './access-token-store';
 
 export { createRefreshTokenPlugin };
 export default createRefreshTokenPlugin;

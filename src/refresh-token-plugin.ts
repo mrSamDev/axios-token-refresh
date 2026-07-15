@@ -1,5 +1,6 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 
+import type { AccessTokenStore } from './access-token-store';
 import { createRefreshQueue, type RetryableRequestConfig } from './refresh-queue';
 import { tryCatch } from './try-catch';
 
@@ -20,8 +21,22 @@ export interface RefreshTokenPluginOptions {
    * Function that returns the current auth token, or `null` if no token is
    * available. Used both to inject the token into outgoing requests and to
    * decide whether a refresh should be attempted.
+   *
+   * Mutually exclusive with {@link RefreshTokenPluginOptions.accessTokenStore}.
+   * Provide one or the other, not both.
    */
-  getAuthToken: () => string | null;
+  getAuthToken?: () => string | null;
+
+  /**
+   * Storage abstraction for the access token. When provided, the library
+   * automatically persists refreshed tokens via `setAccessToken` and clears
+   * the stored token via `clear` (if defined) when `refreshTokenFn` resolves
+   * with `null` — signalling that authentication is over.
+   *
+   * Mutually exclusive with {@link RefreshTokenPluginOptions.getAuthToken}.
+   * Provide one or the other, not both.
+   */
+  accessTokenStore?: AccessTokenStore;
 
   /**
    * Predicate that determines whether a failed response should trigger a token
@@ -40,10 +55,40 @@ export interface RefreshTokenPluginOptions {
   /**
    * Callback invoked whenever the refresh status changes.
    *
+   * Complementary to the lifecycle hooks (`onRefreshStart`, `onRefreshSuccess`,
+   * `onRefreshFail`). Use this for UI state tracking (e.g. loading spinners);
+   * use the lifecycle hooks for side effects that need the token or error.
+   *
    * @param status The new {@link RefreshStatus}.
    * @param error The error, if the status is `"failed"` or `"error"`.
    */
   onStatusChange?: (status: RefreshStatus, error?: Error) => void;
+
+  /**
+   * Fired when a token refresh begins. Complementary to
+   * {@link RefreshTokenPluginOptions.onStatusChange} (which fires with
+   * `"refreshing"` at the same time).
+   */
+  onRefreshStart?: () => void;
+
+  /**
+   * Fired when a token refresh succeeds, with the new token string.
+   * Complementary to {@link RefreshTokenPluginOptions.onStatusChange} (which
+   * fires with `"success"` at the same time).
+   *
+   * @param token The freshly obtained access token.
+   */
+  onRefreshSuccess?: (token: string) => void;
+
+  /**
+   * Fired when a token refresh fails — either because `refreshTokenFn`
+   * rejected (network/server error) or resolved with `null` (authentication is
+   * over). Complementary to {@link RefreshTokenPluginOptions.onStatusChange}
+   * (which fires with `"failed"` at the same time).
+   *
+   * @param error The error that caused the failure.
+   */
+  onRefreshFail?: (error: Error) => void;
 
   /**
    * Transforms a token into the value used for the `Authorization` header.
@@ -125,20 +170,14 @@ export interface RefreshTokenPluginOptions {
 export function createRefreshTokenPlugin({
   refreshTokenFn,
   getAuthToken,
-  shouldRefreshToken = (error, _originalRequest) => {
-    if (!getAuthToken()) {
-      return false;
-    }
-
-    if (!error?.response) {
-      return true;
-    }
-
-    return error.response.status === 401;
-  },
+  accessTokenStore,
+  shouldRefreshToken,
   onStatusChange = (status, error) => {
     console.log(`Token refresh status: ${status}`, error || '');
   },
+  onRefreshStart,
+  onRefreshSuccess,
+  onRefreshFail,
   authHeaderFormatter = (token) => `Bearer ${token}`,
   getRequestKey,
   refreshTimeout = 10000,
@@ -150,8 +189,26 @@ export function createRefreshTokenPlugin({
     throw new Error('refreshTokenFn must be a function');
   }
 
-  if (typeof getAuthToken !== 'function') {
+  // Mutual exclusion: getAuthToken vs accessTokenStore
+  if (accessTokenStore && getAuthToken !== undefined) {
+    throw new Error('Cannot provide both getAuthToken and accessTokenStore. Use one or the other.');
+  }
+
+  if (!accessTokenStore && getAuthToken === undefined) {
+    throw new Error('Either getAuthToken or accessTokenStore must be provided.');
+  }
+
+  if (!accessTokenStore && typeof getAuthToken !== 'function') {
     throw new Error('getAuthToken must be a function');
+  }
+
+  if (accessTokenStore) {
+    if (typeof accessTokenStore.getAccessToken !== 'function') {
+      throw new Error('accessTokenStore.getAccessToken must be a function');
+    }
+    if (typeof accessTokenStore.setAccessToken !== 'function') {
+      throw new Error('accessTokenStore.setAccessToken must be a function');
+    }
   }
 
   if (!Number.isInteger(maxRetryAttempts) || maxRetryAttempts < 1) {
@@ -161,6 +218,27 @@ export function createRefreshTokenPlugin({
   if (!Number.isFinite(retryDelay) || retryDelay < 0) {
     throw new Error('retryDelay must be a number greater than or equal to 0');
   }
+
+  // Resolve the token getter: either from accessTokenStore or getAuthToken.
+  // After validation, exactly one of the two is guaranteed to be defined.
+  const tokenGetter: () => string | null = accessTokenStore
+    ? accessTokenStore.getAccessToken
+    : (getAuthToken as () => string | null);
+
+  // Resolve shouldRefreshToken with a default that uses tokenGetter.
+  const shouldRefresh =
+    shouldRefreshToken ??
+    ((error: AxiosError, _originalRequest: AxiosRequestConfig) => {
+      if (!tokenGetter()) {
+        return false;
+      }
+
+      if (!error?.response) {
+        return true;
+      }
+
+      return error.response.status === 401;
+    });
 
   const queue = createRefreshQueue(authHeaderFormatter, getRequestKey);
   let isRefreshing = false;
@@ -221,7 +299,7 @@ export function createRefreshTokenPlugin({
     const requestInterceptorId = autoInjectToken
       ? axios.interceptors.request.use(
           (config) => {
-            const token = getAuthToken();
+            const token = tokenGetter();
             if (token) {
               const headers = (config.headers ??= {} as typeof config.headers);
               if (!headers.Authorization) {
@@ -242,13 +320,13 @@ export function createRefreshTokenPlugin({
           return Promise.reject(error);
         }
 
-        const [shouldRefresh, shouldRefreshError] = tryCatch<boolean, Error>(() =>
-          shouldRefreshToken(error, originalRequest),
+        const [shouldRefreshResult, shouldRefreshError] = tryCatch<boolean, Error>(() =>
+          shouldRefresh(error, originalRequest),
         );
         if (shouldRefreshError) {
           return handleInterceptorError(shouldRefreshError);
         }
-        if (!shouldRefresh) {
+        if (!shouldRefreshResult) {
           return Promise.reject(error);
         }
 
@@ -263,6 +341,7 @@ export function createRefreshTokenPlugin({
         if (!isRefreshing) {
           isRefreshing = true;
           onStatusChange('refreshing');
+          onRefreshStart?.();
           refreshPromise = createRefreshPromise();
 
           // Run refresh lifecycle in the background; all callers await queue promises.
@@ -271,10 +350,22 @@ export function createRefreshTokenPlugin({
               refreshPromise as Promise<string | null>,
             );
             if (refreshError) {
+              // Thrown error after all retries — transient, don't clear.
               onStatusChange('failed', refreshError);
+              onRefreshFail?.(refreshError);
               queue.reject(refreshError);
+            } else if (newToken === null) {
+              // null return — authentication is over. Clear token if store supports it.
+              accessTokenStore?.clear?.();
+              const authOverError = new Error('Token refresh failed: refreshTokenFn returned null');
+              onStatusChange('failed', authOverError);
+              onRefreshFail?.(authOverError);
+              queue.reject(authOverError);
             } else {
+              // string return — refresh succeeded. Persist token if store is provided.
+              accessTokenStore?.setAccessToken(newToken);
               onStatusChange('success');
+              onRefreshSuccess?.(newToken);
               queue.resolve(newToken, axios);
             }
 
