@@ -3,64 +3,52 @@
 [![npm version](https://img.shields.io/npm/v/@mrsamdev/axios-token-refresh.svg)](https://www.npmjs.com/package/@mrsamdev/axios-token-refresh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-A robust Axios plugin that handles token refresh logic when API calls fail due to authentication issues. It automatically queues pending requests and retries them once a new token is obtained.
+An Axios plugin that refreshes your auth token when a request fails, queues the failed requests, and replays them once a fresh token arrives. One 401, one refresh, everyone retried.
 
-**Note:** This is a basic wrapper around Axios interceptors, mainly for personal use. If you're using it in production, make sure to review security, error handling, and performance aspects.
+It's a thin wrapper over Axios interceptors, written for my own apps. It works and it's tested, but read the code before you bet production traffic on it.
 
-## Features
+## What you get
 
-- 🔄 Automatic token refresh on 401 errors
-- ⏱️ Request queueing during token refresh
-- 🔁 Automatic retry of queued requests after successful token refresh
-- 🔧 Customizable conditions for token refresh
-- 📊 Status change notifications during token refresh
-- 🪙 `AccessTokenStore` abstraction — library owns token persistence
-- 🔑 Built-in `createLocalStorageTokenStore` / `createSessionStorageTokenStore` helpers
-- ✅ Automatic auth token injection into outgoing requests (`autoInjectToken`)
-- 🅿️ Mid-refresh requests are parked and released with the fresh token (`pauseRequestsWhileRefreshing`)
-- 🪝 Lifecycle hooks: `onRefreshStart`, `onRefreshSuccess`, `onRefreshFail`
-- 🛠️ `onHookError` surfaces failures from your own hooks
-- ⏰ Configurable timeout for token refresh operations
-- 🛑 Per-attempt `AbortSignal` — timeouts and cleanup stop stale refresh calls
-- 🔑 Customizable auth header formatting
-- 🧠 Optional request dedupe via `getRequestKey` (off by default — every failed request retries independently)
-- 🚫 Per-request refresh opt-out with `skipAuthRefresh`
-- 🔁 Configurable refresh retry policy (`maxRetryAttempts`, `retryDelay`)
-- 🧹 Automatic token clearing on auth-over (`refreshTokenFn` returns `null`)
-- 📦 Supports ESM and CommonJS
-- 🔒 TypeScript support with full type definitions
+- Refreshes the token on 401s, or on any condition you define with `shouldRefreshToken`
+- Queues failed requests while the refresh runs, then retries them with the new token
+- Parks mid-refresh requests too, so nothing leaves with a stale token (`pauseRequestsWhileRefreshing`)
+- Injects the current token into outgoing requests (`autoInjectToken`)
+- `AccessTokenStore` abstraction: the library reads, persists, and clears tokens for you, with `createLocalStorageTokenStore` / `createSessionStorageTokenStore` built in
+- `refreshTokenFn` controls the whole token lifecycle through its return type: string, `null`, or throw
+- Retries the refresh itself with `maxRetryAttempts`, `retryDelay`, and a per-attempt `AbortSignal`
+- Caps the retry queue with `maxQueueSize` and the retry burst with `maxConcurrentRetries`
+- Lifecycle hooks: `onRefreshStart`, `onRefreshSuccess`, `onRefreshFail`, plus `onStatusChange` for UI state
+- `onHookError` surfaces failures from your own hooks; `silent` drops the console fallback
+- Per-request opt-out via `skipAuthRefresh`, optional dedupe via `getRequestKey`
+- Custom Authorization header format via `authHeaderFormatter`
+- ESM, CommonJS, and full TypeScript types
 
 ## Installation
 
 ```bash
 pnpm add @mrsamdev/axios-token-refresh
-```
-
-or
-
-```bash
+# or
 npm install @mrsamdev/axios-token-refresh
-```
-
-or
-
-```bash
+# or
 yarn add @mrsamdev/axios-token-refresh
 ```
 
 ## Development
 
-- Typecheck: `pnpm typecheck`
-- Build: `pnpm build` (tsdown; outputs CJS/ESM + type declarations to `dist/`)
-- Tests: `pnpm test` (Vitest, node environment)
-- Coverage: `pnpm test:coverage`
-- Format: `pnpm fmt` (oxfmt) / `pnpm fmt:check`
-- Lint: `pnpm lint`
-- Library source: `src/index.ts`
+Everything runs through pnpm. The library lives in `src/index.ts`.
+
+```
+pnpm typecheck   # tsc --noEmit
+pnpm build       # tsdown; CJS/ESM plus type declarations into dist/
+pnpm test        # Vitest, node environment
+pnpm test:coverage
+pnpm fmt         # oxfmt; fmt:check for CI
+pnpm lint
+```
 
 ## Usage
 
-### Basic Example (with `AccessTokenStore` — recommended)
+### Basic example with `AccessTokenStore` (recommended)
 
 ```javascript
 import axios from 'axios';
@@ -74,10 +62,9 @@ const apiClient = axios.create({
 });
 
 const refreshPlugin = createRefreshTokenPlugin({
-  // The library owns token persistence — no manual localStorage.setItem needed
+  // The library owns persistence. You return the new token, it stores it.
   accessTokenStore: createLocalStorageTokenStore('token'),
 
-  // Just return the new token; the library stores it automatically
   refreshTokenFn: async () => {
     const response = await axios.post('https://api.example.com/refresh-token', {
       refresh_token: localStorage.getItem('refreshToken'),
@@ -91,7 +78,7 @@ refreshPlugin.attach(apiClient);
 export default apiClient;
 ```
 
-### Basic Example (with `getAuthToken` — legacy)
+### Basic example with `getAuthToken` (legacy)
 
 ```javascript
 import axios from 'axios';
@@ -108,7 +95,7 @@ const refreshPlugin = createRefreshTokenPlugin({
     });
 
     const newToken = response.data.access_token;
-    localStorage.setItem('token', newToken); // you must persist manually
+    localStorage.setItem('token', newToken); // you persist it yourself this time
     return newToken;
   },
 
@@ -120,41 +107,38 @@ refreshPlugin.attach(apiClient);
 export default apiClient;
 ```
 
-> **Note:** `getAuthToken` and `accessTokenStore` are mutually exclusive — provide one or the other, not both. The library throws if both are provided.
+`getAuthToken` and `accessTokenStore` are mutually exclusive. Pick one. The library throws if you pass both.
 
-### Advanced Configuration
-
-You can customize when token refresh is triggered with the `shouldRefreshToken` option:
+### Advanced configuration
 
 ```javascript
 const refreshPlugin = createRefreshTokenPlugin({
   // ... other options
 
-  // Custom options added in latest version
-  authHeaderFormatter: (token) => `Custom ${token}`, // Default: `Bearer ${token}`
-  refreshTimeout: 15000, // 15 seconds timeout (default: 10000ms)
-  maxRetryAttempts: 3, // Total refresh attempts including the initial attempt
-  retryDelay: 300, // Delay in ms between refresh retry attempts
+  authHeaderFormatter: (token) => `Custom ${token}`, // default: `Bearer ${token}`
+  refreshTimeout: 15000, // 15 seconds, default is 10000ms
+  maxRetryAttempts: 3, // total refresh attempts, including the first
+  retryDelay: 300, // ms between refresh attempts
   getRequestKey: (request) =>
     `${request.method}-${request.url}-${JSON.stringify(request.data || {})}`,
 
+  // Decide yourself when a refresh is warranted
   shouldRefreshToken: (error) => {
-    // Custom logic to determine when to refresh the token
     return (
-      // Refresh on 401 Unauthorized
+      // 401 Unauthorized
       (error.response && error.response.status === 401) ||
-      // Refresh on specific error message
+      // a specific error body
       (error.response && error.response.data && error.response.data.error === 'token_expired') ||
-      // Refresh on network errors when token exists
+      // network errors, but only if we hold a token
       (error.message === 'Network Error' && localStorage.getItem('token'))
     );
   },
 });
 ```
 
-### Skip Refresh For Specific Requests
+### Skip refresh for specific requests
 
-Use `skipAuthRefresh: true` to bypass refresh logic for endpoints like login/logout/refresh:
+The refresh endpoint shouldn't trigger a refresh, and public endpoints don't need one at all. Pass `skipAuthRefresh: true` and the plugin ignores that request entirely:
 
 ```typescript
 apiClient.get('/public-profile', {
@@ -162,7 +146,7 @@ apiClient.get('/public-profile', {
 });
 ```
 
-If TypeScript complains about this custom config property, add module augmentation once in your project:
+If TypeScript complains about the custom property, add module augmentation once in your project:
 
 ```typescript
 import 'axios';
@@ -176,17 +160,9 @@ declare module 'axios' {
 
 ### Parking requests during a refresh
 
-By default (`pauseRequestsWhileRefreshing: true`) the request interceptor holds
-outgoing requests while a refresh is in flight, then releases them with the
-fresh token. Without the hold, mid-refresh requests race out with the stale
-token, 401, and pile into the retry queue — every such request hits your API
-twice.
+With the default `pauseRequestsWhileRefreshing: true`, the request interceptor holds outgoing requests while a refresh is in flight, then releases them with the fresh token. Turn it off and those requests race out with the stale token, 401, and pile into the retry queue. Every one of them hits your API twice.
 
-Parked requests follow the queue's failure semantics: when the refresh fails
-(or `refreshTokenFn` returns `null`), they are rejected with the same
-`Token refresh failed` error instead of being sent with a dead token. Plugin
-cleanup rejects parked requests immediately. `skipAuthRefresh` requests are
-never parked.
+Parked requests follow the queue's failure rules. If the refresh fails, or `refreshTokenFn` returns `null`, they're rejected with the same `Token refresh failed` error instead of flying with a dead token. Plugin cleanup rejects them immediately. Requests with `skipAuthRefresh: true` and requests without a token are never parked, so a public call never waits on someone else's refresh.
 
 ```typescript
 createRefreshTokenPlugin({
@@ -195,18 +171,11 @@ createRefreshTokenPlugin({
 });
 ```
 
-Set `pauseRequestsWhileRefreshing: false` for the old fire-immediately
-behavior. The hold works independently of `autoInjectToken`: with
-`autoInjectToken: false` requests are still parked, but headers stay yours.
-Tokenless requests are never parked — a public call is never held hostage
-to an unrelated refresh.
+The hold works independently of `autoInjectToken`. With `autoInjectToken: false` requests still get parked, but your headers stay your business. Set `pauseRequestsWhileRefreshing: false` for the old fire-immediately behavior.
 
 ### Bounding the retry queue
 
-`maxQueueSize` caps how many requests wait for the refresh. When the queue is
-full, the newest refreshable request is rejected with
-`Token refresh queue is full` so the caller can back off instead of piling
-up unbounded memory. Defaults to unlimited.
+`maxQueueSize` caps how many requests may wait for the refresh. When the queue is full, the newest refreshable request is rejected with `Token refresh queue is full`, so the caller can back off instead of filling memory. The default is unlimited, so set it if you expect bursts.
 
 ```typescript
 createRefreshTokenPlugin({
@@ -216,7 +185,7 @@ createRefreshTokenPlugin({
 
 ### `AccessTokenStore`
 
-The `AccessTokenStore` interface abstracts token persistence. The library uses it to read the current token, persist refreshed tokens, and (optionally) clear stale tokens. Provide one of `getAuthToken` or `accessTokenStore` — not both.
+The `AccessTokenStore` interface abstracts token persistence. The library reads the current token from it, stores refreshed tokens into it, and clears it when auth ends. Provide `getAuthToken` or `accessTokenStore`, never both.
 
 ```typescript
 import type { AccessTokenStore } from '@mrsamdev/axios-token-refresh';
@@ -224,13 +193,13 @@ import type { AccessTokenStore } from '@mrsamdev/axios-token-refresh';
 interface AccessTokenStore {
   getAccessToken(): string | null;
   setAccessToken(token: string): void;
-  clear?(): void; // optional
+  clear?(): void;
 }
 ```
 
-- **`getAccessToken`** — reads the current token. Used for request injection and the default `shouldRefreshToken` predicate.
-- **`setAccessToken`** — called automatically by the library after a successful refresh.
-- **`clear`** (optional) — called automatically when `refreshTokenFn` returns `null` (auth is over). If omitted, the library won't touch the token on failure.
+- `getAccessToken` returns the current token. Used for request injection and the default `shouldRefreshToken` check.
+- `setAccessToken` stores a refreshed token. The library calls it after a successful refresh.
+- `clear` is optional. The library calls it when `refreshTokenFn` returns `null`. Omit it and the library leaves the token alone on failure.
 
 #### Built-in helpers
 
@@ -240,11 +209,8 @@ import {
   createSessionStorageTokenStore,
 } from '@mrsamdev/axios-token-refresh';
 
-// localStorage-backed store
-const store = createLocalStorageTokenStore('token');
-
-// sessionStorage-backed store
-const store = createSessionStorageTokenStore('token');
+const localStorageStore = createLocalStorageTokenStore('token');
+const sessionStorageStore = createSessionStorageTokenStore('token');
 ```
 
 #### Custom store (cookies, Zustand, Redux, etc.)
@@ -259,77 +225,68 @@ const cookieStore: AccessTokenStore = {
 
 ### `refreshTokenFn` return contract
 
-The `refreshTokenFn` has three distinct outcomes:
+`refreshTokenFn` has three outcomes, and the library treats each differently:
 
-| Return   | Meaning                | Library action                                                                   |
-| -------- | ---------------------- | -------------------------------------------------------------------------------- |
-| `string` | Refresh succeeded      | `accessTokenStore.setAccessToken(token)` then retry queued requests              |
-| `null`   | Authentication is over | `accessTokenStore.clear?.()` then reject queued requests                         |
-| `throw`  | Network/server failure | Retry per `maxRetryAttempts`; if all fail, reject queued requests (**no clear**) |
+| Return   | Meaning                | What the library does                                             |
+| -------- | ---------------------- | ----------------------------------------------------------------- |
+| `string` | Refresh succeeded      | Stores the token via `accessTokenStore.setAccessToken`, then retries the queued requests |
+| `null`   | Auth is over           | Calls `accessTokenStore.clear?.()`, then rejects the queued requests |
+| `throw`  | Network or server error | Retries per `maxRetryAttempts`; if all attempts fail, rejects the queued requests **without clearing the token** |
 
-This lets the consumer control token lifecycle through the return type:
+You steer the token lifecycle with the return type. Return `null` when the refresh token is dead. Throw when the failure might be transient and let the retry policy sort it out:
 
 ```typescript
 refreshTokenFn: async (signal) => {
   try {
-    // Forward the attempt's AbortSignal so a timeout or plugin cleanup
-    // stops this call instead of overlapping the next attempt.
+    // Forward the AbortSignal so a timeout or cleanup stops this call
+    // instead of letting it overlap the next attempt.
     const res = await axios.post('/refresh', { refresh_token: getRefreshToken() }, { signal });
-    return res.data.access_token; // -> setAccessToken
+    return res.data.access_token;
   } catch (e) {
-    if (e.response?.status === 401) {
-      return null; // -> clear() -- refresh token is dead
-    }
-    throw e; // -> retry, don't clear
+    if (e.response?.status === 401) return null; // refresh token is dead: clear
+    throw e; // transient: retry, don't clear
   }
 };
 ```
 
-Each retry attempt receives a fresh `AbortSignal`. It aborts when that attempt
-times out, when the handle is aborted, or when the plugin is cleaned up.
-Ignoring the signal is fine -- the refresh still settles on its own, but the
-previous attempt keeps running in the background while the retry fires.
+Each retry attempt gets a fresh `AbortSignal`. It aborts when that attempt times out, when the handle is aborted, or when the plugin is cleaned up. Ignoring the signal is fine, the refresh still settles on its own. But the old attempt keeps running in the background while the retry fires, so keep `refreshTokenFn` idempotent.
 
-### Lifecycle Hooks
+### Lifecycle hooks
 
-The library provides three lifecycle hooks alongside the existing `onStatusChange`:
+Three hooks run alongside `onStatusChange`:
 
 ```typescript
 createRefreshTokenPlugin({
   // ... other options
 
   onRefreshStart: () => {
-    // Refresh has started
+    // a refresh has begun
   },
 
   onRefreshSuccess: (token: string) => {
-    // Refresh succeeded -- token is the new access token
     analytics.track('refresh_success');
   },
 
   onRefreshFail: (error: Error) => {
-    // Refresh failed -- either thrown or null return
+    // thrown error or null return, either way auth didn't survive
     redirectToLogin();
   },
 
-  // onStatusChange is kept for state tracking (e.g. loading spinners)
+  // kept for state tracking, e.g. loading spinners
   onStatusChange: (status) => {
     loadingStore.set(status === 'refreshing');
   },
 });
 ```
 
-`onStatusChange` and the lifecycle hooks are **complementary**, not competing:
-
-- `onStatusChange` answers "what state is the system in?" -- useful for UI bindings
-- Lifecycle hooks answer "this specific thing happened" -- useful for side effects, analytics, cache invalidation
+`onStatusChange` and the hooks do different jobs. `onStatusChange` answers "what state is the system in", which suits UI bindings. The hooks answer "this specific thing happened", which suits side effects: analytics, cache invalidation, redirects.
 
 `onStatusChange` receives a third argument with context:
 
 ```typescript
 onStatusChange: (status, error, context) => {
   // context.queueDepth: requests waiting in the retry queue
-  // context.attemptCount: which refresh attempt is running (1-based)
+  // context.attemptCount: which refresh attempt is running, 1-based
   loadingStore.set(status === 'refreshing');
   metrics.recordQueueDepth(context.queueDepth);
 },
@@ -337,29 +294,26 @@ onStatusChange: (status, error, context) => {
 
 #### Hook failure visibility
 
-A throwing lifecycle hook never breaks the refresh flow -- the queue always
-settles. Hook failures are surfaced instead of swallowed:
+A throwing hook never breaks the refresh flow; the queue always settles. But failures get surfaced, not swallowed:
 
 ```typescript
 createRefreshTokenPlugin({
   // ... other options
 
   onHookError: (error, hookName) => {
-    // Called when onStatusChange / onRefreshStart / onRefreshSuccess /
-    // onRefreshFail throws. Log it, report it -- do not rethrow blindly,
-    // a throwing handler falls back to console.error.
+    // Runs when onStatusChange, onRefreshStart, onRefreshSuccess,
+    // or onRefreshFail throws. Log it, report it. Don't rethrow blindly,
+    // a throwing onHookError falls back to console.error.
     sentry.captureException(error, { tags: { hook: hookName } });
   },
 });
 ```
 
-When `onHookError` is omitted (or itself throws), the failure falls back to
-`console.error` so it stays visible. Set `silent: true` to drop that fallback
-for serverless/edge environments where stderr is alarming.
+Without `onHookError`, or when it itself throws, the failure falls back to `console.error` so it stays visible. Set `silent: true` to drop the fallback on runtimes where stderr is loud, like serverless or edge.
 
 ## TypeScript Usage
 
-For TypeScript projects, you can take advantage of the built-in type definitions:
+The package ships its own type definitions:
 
 ```typescript
 import axios, { AxiosError } from 'axios';
@@ -401,79 +355,70 @@ const refreshPlugin = createRefreshTokenPlugin(options);
 
 ### Exports
 
-- `createRefreshTokenPlugin(options)` (also default export)
-- `createLocalStorageTokenStore(key)` / `createSessionStorageTokenStore(key)`
-- Types: `RefreshTokenPluginOptions`, `RefreshStatus`, `AccessTokenStore`, `RetryableRequestConfig` (Axios config with the `_retry` / `skipAuthRefresh` flags), `RefreshFailedError` (`Error` with `originalError`, thrown to queued requests when a refresh fails)
+- `createRefreshTokenPlugin(options)`, also the default export
+- `createLocalStorageTokenStore(key)` and `createSessionStorageTokenStore(key)`
+- Types: `RefreshTokenPluginOptions`, `RefreshStatus`, `AccessTokenStore`, `RetryableRequestConfig`, `RefreshFailedError`
+
+`RetryableRequestConfig` is Axios config plus the `_retry` and `skipAuthRefresh` flags. `RefreshFailedError` carries `originalError` and is what queued requests get rejected with when a refresh fails.
 
 ### `createRefreshTokenPlugin(options)`
 
-Creates an Axios interceptor plugin that handles token refresh. Install it on
-an Axios instance with `refreshPlugin.attach(apiClient)`, which returns a
-cleanup function.
+Creates the plugin. Install it with `refreshPlugin.attach(apiClient)`, which returns a cleanup function.
 
-> **Deprecated:** calling the plugin as a function (`refreshPlugin(apiClient)`)
-> still works but is deprecated. Use `refreshPlugin.attach(apiClient)`. The
-> callable form will be removed in a future release.
+Calling the plugin itself, `refreshPlugin(apiClient)`, still works but is deprecated and will be removed. Use `attach`.
 
 #### Options
 
-| Option                 | Type                                                      | Required | Default                                       | Description                                                                                                                                                                                    |
-| ---------------------- | --------------------------------------------------------- | -------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `refreshTokenFn`       | `() => Promise<string \| null>`                           | Yes      | -                                             | Async function that refreshes the token. Returns the new token string, `null` (auth over), or throws (retryable failure). See [return contract](#refreshtokenfn-return-contract).              |
-| `getAuthToken`         | `() => string \| null`                                    | One of*  | -                                             | Function that returns the current auth token. Mutually exclusive with `accessTokenStore`.                                                                                                      |
-| `accessTokenStore`     | `AccessTokenStore`                                        | One of*  | -                                             | Storage abstraction for the access token. Library auto-persists on refresh and auto-clears on `null` return. Mutually exclusive with `getAuthToken`.                                           |
-| `shouldRefreshToken`   | `(error: AxiosError, originalRequest: object) => boolean` | No       | Checks for 401 status or network errors       | Function that determines if token refresh should be triggered.                                                                                                                                 |
-| `onStatusChange`       | `(status: string, error?: Error) => void`                 | No       | No-op                                         | Callback for token refresh status updates. Status can be "refreshing", "success", "failed", or "error".                                                                                        |
-| `onRefreshStart`       | `() => void`                                              | No       | -                                             | Fired when a token refresh begins. Complementary to `onStatusChange`.                                                                                                                          |
-| `onRefreshSuccess`     | `(token: string) => void`                                 | No       | -                                             | Fired when refresh succeeds, with the new token string.                                                                                                                                        |
-| `onRefreshFail`        | `(error: Error) => void`                                  | No       | -                                             | Fired when refresh fails (thrown error or `null` return).                                                                                                                                      |
-| `authHeaderFormatter`  | `(token: string) => string`                               | No       | `(token) => Bearer ${token}`                  | Function to format the authorization header value.                                                                                                                                             |
-| `getRequestKey`        | `(request: AxiosRequestConfig) => string`                 | No       | Disabled (each request retries independently) | Dedupe key for queued retries. Requests sharing a key share one retry. Omit to retry every failed request independently; provide to opt into dedupe, e.g. include `data` to distinguish POSTs. |
-| `refreshTimeout`       | `number`                                                  | No       | `10000` (10 seconds)                          | Timeout for token refresh operation in milliseconds.                                                                                                                                           |
-| `maxRetryAttempts`     | `number`                                                  | No       | `1`                                           | Number of refresh attempts before failing. Must be an integer greater than or equal to 1.                                                                                                      |
-| `retryDelay`           | `number`                                                  | No       | `0`                                           | Delay in milliseconds between refresh retry attempts. Must be greater than or equal to 0.                                                                                                      |
-| `maxConcurrentRetries` | `number`                                                  | No       | Unlimited                                     | Max retried requests in flight at once after a refresh. Must be an integer greater than or equal to 1. Set it to avoid retry bursts when many requests fail together.                          |
-| `autoInjectToken`      | `boolean`                                                 | No       | `true`                                        | When `true`, installs a request interceptor that automatically injects the current token into outgoing requests.                                                                               |
+| Option                   | Type                                                       | Required | Default                        | Description                                                                                                                                  |
+| ------------------------ | ---------------------------------------------------------- | -------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refreshTokenFn`         | `(signal: AbortSignal) => Promise<string \| null>`         | Yes      |                                | Refreshes the token. Return a string, `null` (auth over), or throw (retryable). See the [return contract](#refreshtokenfn-return-contract). |
+| `getAuthToken`           | `() => string \| null`                                     | One of\* |                                | Returns the current auth token. Mutually exclusive with `accessTokenStore`.                                                                   |
+| `accessTokenStore`       | `AccessTokenStore`                                         | One of\* |                                | Storage abstraction for the token. The library persists on refresh and clears on `null`. Mutually exclusive with `getAuthToken`.              |
+| `shouldRefreshToken`     | `(error: AxiosError, originalRequest: object) => boolean`   | No       | 401s and network errors        | Decides whether an error triggers a refresh.                                                                                                  |
+| `onStatusChange`         | `(status: string, error?: Error, context?: object) => void` | No       | No-op                          | Status updates: `"refreshing"`, `"success"`, `"failed"`, or `"error"`.                                                                       |
+| `onRefreshStart`         | `() => void`                                               | No       |                                | Runs when a refresh begins.                                                                                                                   |
+| `onRefreshSuccess`       | `(token: string) => void`                                  | No       |                                | Runs on success, with the new token.                                                                                                          |
+| `onRefreshFail`          | `(error: Error) => void`                                   | No       |                                | Runs on failure, thrown error or `null` return.                                                                                               |
+| `onHookError`            | `(error: Error, hookName: string) => void`                  | No       | `console.error` fallback       | Runs when one of your hooks throws. If omitted, or if it throws too, failures fall back to `console.error`.                                    |
+| `authHeaderFormatter`    | `(token: string) => string`                                 | No       | ``(token) => `Bearer ${token}` `` | Formats the Authorization header value.                                                                                                    |
+| `getRequestKey`          | `(request: AxiosRequestConfig) => string`                  | No       | Off                            | Dedupe key for queued retries. Requests sharing a key share one retry. Omit it and every failed request retries on its own.                  |
+| `refreshTimeout`         | `number`                                                    | No       | `10000`                        | How long one refresh attempt may run, in ms.                                                                                                  |
+| `maxRetryAttempts`       | `number`                                                    | No       | `1`                            | Total refresh attempts before giving up. Integer, at least 1.                                                                                 |
+| `retryDelay`              | `number`                                                    | No       | `0`                            | Delay between refresh attempts, in ms. At least 0.                                                                                           |
+| `maxConcurrentRetries`   | `number`                                                    | No       | Unlimited                      | How many retried requests may be in flight at once after a refresh. Integer, at least 1. Tames the burst when many requests fail together.    |
+| `autoInjectToken`        | `boolean`                                                   | No       | `true`                         | Installs a request interceptor that puts the current token on outgoing requests.                                                              |
+| `pauseRequestsWhileRefreshing` | `boolean`                                            | No       | `true`                         | Holds outgoing requests while a refresh runs, then releases them with the fresh token.                                                       |
+| `maxQueueSize`           | `number`                                                    | No       | Unlimited                      | Caps the retry queue. When full, the newest refreshable request is rejected with `Token refresh queue is full`.                                |
+| `silent`                 | `boolean`                                                   | No       | `false`                        | Drops the `console.error` fallback for hook failures. Handy on runtimes where stderr costs you.                                              |
 
 \* Provide exactly one of `getAuthToken` or `accessTokenStore`.
 
 ### Built-in helpers
 
-| Helper                           | Type                                | Description                                 |
-| -------------------------------- | ----------------------------------- | ------------------------------------------- |
-| `createLocalStorageTokenStore`   | `(key: string) => AccessTokenStore` | Creates a store backed by `localStorage`.   |
-| `createSessionStorageTokenStore` | `(key: string) => AccessTokenStore` | Creates a store backed by `sessionStorage`. |
+| Helper                           | Type                                 | Description                                |
+| -------------------------------- | ------------------------------------ | ------------------------------------------ |
+| `createLocalStorageTokenStore`   | `(key: string) => AccessTokenStore`  | Creates a store backed by `localStorage`.  |
+| `createSessionStorageTokenStore` | `(key: string) => AccessTokenStore`  | Creates a store backed by `sessionStorage`. |
 
 ## How It Works
 
-1. When an API call fails, the interceptor checks if the error meets the criteria for token refresh.
-2. If token refresh is needed, it queues the failed request and starts the token refresh process (if not already in progress).
-3. The refresh operation is attempted up to `maxRetryAttempts` times with optional `retryDelay` between attempts.
-4. If `refreshTokenFn` resolves with a **string**: the token is persisted via `accessTokenStore.setAccessToken` (if provided), and all queued requests are retried with the new token.
-5. If `refreshTokenFn` resolves with **`null`**: `accessTokenStore.clear?.()` is called (if provided), and all queued requests are rejected — authentication is over.
-6. If `refreshTokenFn` **throws** (all retries exhausted): all queued requests are rejected with detailed error information. The token is **not** cleared (might be a transient failure).
-7. If `autoInjectToken` is `true` (default), a request interceptor automatically injects the current token into outgoing requests — no manual interceptor needed.
+1. A request fails. The interceptor checks it against `shouldRefreshToken`.
+2. If it qualifies, the request goes into the queue and a refresh starts, unless one is already running.
+3. The refresh runs up to `maxRetryAttempts` times, with `retryDelay` between attempts.
+4. `refreshTokenFn` returns a string: the token is stored via `accessTokenStore.setAccessToken` and every queued request retries with it.
+5. It returns `null`: `accessTokenStore.clear?.()` runs and the queued requests are rejected. Auth is over.
+6. It throws, all attempts spent: the queued requests are rejected with the full error. The token survives, since the failure might be transient.
+7. With `autoInjectToken` on (the default), a request interceptor puts the current token on outgoing requests. No manual interceptor needed.
 
-> **Note on timeouts:** `refreshTimeout` bounds how long a refresh attempt is _awaited_. On timeout, the attempt's `AbortSignal` aborts — forward it into your HTTP call to stop the work. A `refreshTokenFn` that ignores the signal keeps running in the background while the next retry starts immediately, so keep it idempotent.
+`refreshTimeout` bounds how long the library waits for one attempt. On timeout, that attempt's `AbortSignal` aborts. Forward it into your HTTP call to actually stop the work; a `refreshTokenFn` that ignores the signal keeps running in the background while the next retry fires immediately. Keep the function idempotent and this can't hurt you.
 
 ## Error Handling
 
-The plugin provides detailed error information when token refresh fails:
-
-- Token refresh timeouts
-- Errors in the refresh token function
-- `refreshTokenFn` returning `null` (authentication is over)
-- Errors in the interceptor itself
-
-All errors are properly propagated to your application through:
-
-- The `onStatusChange` callback (with error details)
-- The `onRefreshFail` lifecycle hook (with error details)
-- The rejected promises of pending requests
+When something goes wrong, the plugin reports rather than guesses. It covers refresh timeouts, errors thrown by `refreshTokenFn`, a `null` return (auth over), and errors inside the interceptor itself. Each surfaces through `onStatusChange`, `onRefreshFail`, and the rejected promises of the pending requests. What the user sees is your call.
 
 ## Compatibility
 
-This plugin is compatible with Axios v0.21.0 and above.
+Works with Axios v0.21.0 and above.
 
 ## License
 
