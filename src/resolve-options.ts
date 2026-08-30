@@ -18,6 +18,7 @@ interface ResolveInput {
   shouldRefreshToken?: RefreshTokenPluginOptions['shouldRefreshToken'];
   maxRetryAttempts: number;
   retryDelay: number;
+  maxConcurrentRetries?: number;
 }
 
 /**
@@ -35,6 +36,7 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     shouldRefreshToken,
     maxRetryAttempts,
     retryDelay,
+    maxConcurrentRetries,
   } = input;
 
   if (typeof refreshTokenFn !== 'function') {
@@ -69,6 +71,13 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
 
   if (!Number.isFinite(retryDelay) || retryDelay < 0) {
     throw new Error('retryDelay must be a number greater than or equal to 0');
+  }
+
+  if (
+    maxConcurrentRetries !== undefined &&
+    (!Number.isInteger(maxConcurrentRetries) || maxConcurrentRetries < 1)
+  ) {
+    throw new Error('maxConcurrentRetries must be an integer greater than or equal to 1');
   }
 
   // After validation, exactly one of the two is defined.

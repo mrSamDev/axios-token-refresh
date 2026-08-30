@@ -127,6 +127,26 @@ describe('createRefreshTokenPlugin', () => {
         });
       }).toThrow('retryDelay must be a number greater than or equal to 0');
     });
+
+    test('should throw error for zero maxConcurrentRetries', () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          maxConcurrentRetries: 0,
+        });
+      }).toThrow('maxConcurrentRetries must be an integer greater than or equal to 1');
+    });
+
+    test('should throw error for non-integer maxConcurrentRetries', () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          maxConcurrentRetries: 2.5,
+        });
+      }).toThrow('maxConcurrentRetries must be an integer greater than or equal to 1');
+    });
   });
 
   describe('Request Interceptor', () => {
@@ -893,6 +913,38 @@ describe('Queue handling', () => {
 
     expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
     expect(mockAxios).toHaveBeenCalledTimes(2);
+  });
+
+  test('maxConcurrentRetries caps simultaneous retries', async () => {
+    let activeRetries = 0;
+    let peakRetries = 0;
+    mockAxios.mockImplementation(async () => {
+      activeRetries += 1;
+      peakRetries = Math.max(peakRetries, activeRetries);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeRetries -= 1;
+      return { data: 'retry-success' };
+    });
+
+    const plugin = createRefreshTokenPlugin({
+      refreshTokenFn: mockRefreshTokenFn,
+      getAuthToken: mockGetAuthToken,
+      maxConcurrentRetries: 2,
+    });
+
+    plugin(mockAxios);
+    const [, responseInterceptor] = mockAxios.interceptors.response.use.mock.calls[0];
+
+    const errors = Array.from({ length: 5 }, (_, index) => ({
+      response: { status: 401 },
+      config: { method: 'GET', url: `/capped-${index}` },
+    }));
+
+    await Promise.all(errors.map((error) => responseInterceptor(error)));
+
+    expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
+    expect(mockAxios).toHaveBeenCalledTimes(5);
+    expect(peakRetries).toBe(2);
   });
 });
 

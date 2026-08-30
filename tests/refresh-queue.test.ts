@@ -3,6 +3,17 @@ import { describe, expect, test, vi } from 'vitest';
 import { createRefreshQueue, type RetryableRequestConfig } from '../src/refresh-queue';
 
 describe('refresh queue internals', () => {
+  const trackPeakConcurrency = () => {
+    const state = { active: 0, peak: 0 };
+    const request = vi.fn(async () => {
+      state.active += 1;
+      state.peak = Math.max(state.peak, state.active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      state.active -= 1;
+      return { data: 'ok' };
+    });
+    return { state, request };
+  };
   test('does not dedupe when getRequestKey is not provided', () => {
     const queue = createRefreshQueue((token) => `Bearer ${token}`);
     const request = {
@@ -123,5 +134,45 @@ describe('refresh queue internals', () => {
       }),
     );
     expect(result).toStrictEqual({ data: 'ok' });
+  });
+
+  test('caps in-flight retries at maxConcurrentRetries', async () => {
+    const queue = createRefreshQueue((token) => `Bearer ${token}`, undefined, 2);
+    const { state, request } = trackPeakConcurrency();
+    const axiosLike = { request } as any;
+
+    const retryPromises = Array.from({ length: 6 }, (_, index) =>
+      queue.enqueue({
+        method: 'GET',
+        url: `/capped-${index}`,
+        headers: {},
+      } as RetryableRequestConfig),
+    );
+
+    queue.resolve('new-token', axiosLike);
+    await Promise.all(retryPromises);
+
+    expect(request).toHaveBeenCalledTimes(6);
+    expect(state.peak).toBeLessThanOrEqual(2);
+  });
+
+  test('fires all retries at once by default (no concurrency cap)', async () => {
+    const queue = createRefreshQueue((token) => `Bearer ${token}`);
+    const { state, request } = trackPeakConcurrency();
+    const axiosLike = { request } as any;
+
+    const retryPromises = Array.from({ length: 6 }, (_, index) =>
+      queue.enqueue({
+        method: 'GET',
+        url: `/burst-${index}`,
+        headers: {},
+      } as RetryableRequestConfig),
+    );
+
+    queue.resolve('new-token', axiosLike);
+    await Promise.all(retryPromises);
+
+    expect(request).toHaveBeenCalledTimes(6);
+    expect(state.peak).toBe(6);
   });
 });

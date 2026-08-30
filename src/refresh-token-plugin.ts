@@ -58,6 +58,7 @@ export function createRefreshTokenPlugin({
   refreshTimeout = 10000,
   maxRetryAttempts = 1,
   retryDelay = 0,
+  maxConcurrentRetries,
   autoInjectToken = true,
 }: RefreshTokenPluginOptions): (axios: AxiosInstance) => () => void {
   const { tokenGetter, shouldRefresh } = resolvePluginOptions({
@@ -67,9 +68,10 @@ export function createRefreshTokenPlugin({
     shouldRefreshToken,
     maxRetryAttempts,
     retryDelay,
+    maxConcurrentRetries,
   });
 
-  const queue = createRefreshQueue(authHeaderFormatter, getRequestKey);
+  const queue = createRefreshQueue(authHeaderFormatter, getRequestKey, maxConcurrentRetries);
   let isRefreshing = false;
   let refreshPromise: Promise<string | null> | null = null;
 

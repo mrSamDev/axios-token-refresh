@@ -63,6 +63,8 @@ export interface RefreshQueue {
   enqueue: (request: RetryableRequestConfig) => Promise<unknown>;
   /**
    * Resolve all queued requests: apply the new token and fire each request.
+   * When `maxConcurrentRetries` is finite, at most that many retries are in
+   * flight at once.
    *
    * @param newToken The freshly obtained token, or `null`.
    * @param axiosInstance The Axios instance used to execute the retried requests.
@@ -86,11 +88,14 @@ export interface RefreshQueue {
  * @param getRequestKey Optional dedupe key generator. When provided, requests
  *   with the same key share one retry. Omit it to retry every failed request
  *   independently.
+ * @param maxConcurrentRetries Max retried requests in flight at once. Defaults
+ *   to unlimited (all queued retries fire simultaneously).
  * @returns A {@link RefreshQueue} instance.
  */
 export function createRefreshQueue(
   authHeaderFormatter: (token: string) => string,
   getRequestKey?: (config: AxiosRequestConfig) => string,
+  maxConcurrentRetries: number = Number.POSITIVE_INFINITY,
 ): RefreshQueue {
   const pendingRequests: QueueItem[] = [];
   const requestPromiseMap = new Map<string, Promise<unknown>>();
@@ -160,11 +165,30 @@ export function createRefreshQueue(
     const requestsToResolve = [...pendingRequests];
     reset();
 
-    requestsToResolve.forEach(({ request, resolve: resolveRequest }) => {
-      const requestConfig: RetryableRequestConfig = { ...request };
-      applyAuthHeader(requestConfig, newToken, true);
-      resolveRequest(executeRequest(axiosInstance, requestConfig));
-    });
+    let cursor = 0;
+    let inFlight = 0;
+
+    const launchNext = (): void => {
+      while (inFlight < maxConcurrentRetries && cursor < requestsToResolve.length) {
+        const { request, resolve: resolveRequest } = requestsToResolve[cursor];
+        cursor += 1;
+        const requestConfig: RetryableRequestConfig = { ...request };
+        applyAuthHeader(requestConfig, newToken, true);
+        inFlight += 1;
+        const attempt = executeRequest(axiosInstance, requestConfig);
+        resolveRequest(attempt);
+        Promise.resolve(attempt)
+          .finally(() => {
+            inFlight -= 1;
+            launchNext();
+          })
+          // The queued caller receives the attempt's own rejection; this
+          // chain only tracks concurrency slots.
+          .catch(() => {});
+      }
+    };
+
+    launchNext();
   };
 
   const reject = (refreshError: unknown): void => {

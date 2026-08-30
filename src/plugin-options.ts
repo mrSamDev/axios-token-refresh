@@ -58,6 +58,13 @@ export interface RefreshTokenPluginOptions {
   /** Delay in ms between retry attempts. `>= 0`. Defaults to `0`. */
   retryDelay?: number;
 
+  /**
+   * Max simultaneous retried requests after a successful refresh. `>= 1`.
+   * Defaults to unlimited (all queued retries fire at once). Set to avoid
+   * retry bursts hitting your API when many requests fail together.
+   */
+  maxConcurrentRetries?: number;
+
   /** When `true` (default), a request interceptor injects the token into outgoing requests. Set `false` to handle auth headers yourself. */
   autoInjectToken?: boolean;
 }
