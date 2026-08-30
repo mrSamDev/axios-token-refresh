@@ -8,7 +8,15 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       include: ['src/**/*.ts'],
-      exclude: ['tests/**', 'dist/**', 'coverage/**', 'opensrc/**', 'node_modules/**'],
+      exclude: [
+        'tests/**',
+        'dist/**',
+        'coverage/**',
+        'opensrc/**',
+        'node_modules/**',
+        // types-only module, no runtime code
+        'src/plugin-options.ts',
+      ],
       thresholds: {
         lines: 70,
         functions: 70,

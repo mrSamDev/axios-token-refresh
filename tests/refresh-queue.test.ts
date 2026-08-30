@@ -64,6 +64,24 @@ describe('refresh queue internals', () => {
     expect(first).toBe(second);
   });
 
+  test('applyAuthHeader leaves config untouched when token is null', () => {
+    const queue = createRefreshQueue((token) => `Bearer ${token}`);
+    const request = {
+      method: 'GET',
+      url: '/null-token',
+      headers: {},
+    } as RetryableRequestConfig;
+
+    const result = queue.applyAuthHeader(request, null, true);
+
+    expect(result).toBe(request);
+    expect(result.headers.Authorization).toBeUndefined();
+
+    const bare = {} as RetryableRequestConfig;
+    queue.applyAuthHeader(bare, null);
+    expect(bare.headers).toBeUndefined();
+  });
+
   test('does not overwrite existing authorization header unless forced', () => {
     const queue = createRefreshQueue((token) => `Bearer ${token}`);
     const request = {
