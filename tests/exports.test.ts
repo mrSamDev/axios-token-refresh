@@ -10,7 +10,9 @@ import {
   createSessionStorageTokenStore,
   type AccessTokenStore,
   type RefreshFailedError,
+  type RefreshPlugin,
   type RefreshStatus,
+  type RefreshStatusContext,
   type RefreshTokenPluginOptions,
   type RetryableRequestConfig,
 } from '../src/index';
@@ -21,8 +23,9 @@ describe('public API surface', () => {
     const { peerDependencies } = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 
     // The source imports InternalAxiosRequestConfig, which exists only in
-    // axios v1; a range below 1.0.0 promises types we cannot deliver.
-    expect(peerDependencies.axios).toBe('>=1.0.0');
+    // axios v1; a range below 1.0.0 promises types we cannot deliver, and an
+    // unbounded upper range would silently break on axios 2.x.
+    expect(peerDependencies.axios).toBe('>=1.0.0 <2.0.0');
   });
 
   test('exports runtime values', () => {

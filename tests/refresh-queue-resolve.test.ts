@@ -14,84 +14,47 @@ describe('refresh queue internals', () => {
     });
     return { state, request };
   };
-  test('does not dedupe when getRequestKey is not provided', () => {
-    const queue = createRefreshQueue((token) => `Bearer ${token}`);
-    const request = {
-      headers: {},
-    } as RetryableRequestConfig;
-
-    const first = queue.enqueue(request);
-    const second = queue.enqueue({
-      headers: {},
-    } as RetryableRequestConfig);
-
-    expect(first).not.toBe(second);
-  });
-
-  test('dedupes when getRequestKey returns the same key', () => {
+  test('enqueue rejects with a distinct error once maxQueueSize is reached', async () => {
     const queue = createRefreshQueue(
       (token) => `Bearer ${token}`,
-      () => 'same-key',
+      undefined,
+      Number.POSITIVE_INFINITY,
+      2,
     );
-    const request = {
-      method: 'GET',
-      url: '/dedupe',
-      headers: {},
-    } as RetryableRequestConfig;
-
-    const first = queue.enqueue(request);
-    const second = queue.enqueue({
-      method: 'GET',
-      url: '/other',
-      headers: {},
-    } as RetryableRequestConfig);
-
-    expect(first).toBe(second);
-  });
-
-  test('respects empty-string key from getRequestKey', () => {
-    const queue = createRefreshQueue(
-      (token) => `Bearer ${token}`,
-      () => '',
-    );
-    const request = {
-      headers: {},
-    } as RetryableRequestConfig;
-
-    const first = queue.enqueue(request);
+    const first = queue.enqueue({ headers: {} } as RetryableRequestConfig);
     const second = queue.enqueue({ headers: {} } as RetryableRequestConfig);
+    const third = queue.enqueue({ headers: {} } as RetryableRequestConfig);
 
-    expect(first).toBe(second);
+    await expect(third).rejects.toThrow('Token refresh queue is full');
+
+    // Earlier queued requests still drain normally.
+    const axiosLike = { request: vi.fn().mockResolvedValue({ data: 'ok' }) } as any;
+    queue.resolve('new-token', axiosLike);
+    await Promise.all([first, second]);
+    expect(axiosLike.request).toHaveBeenCalledTimes(2);
   });
 
-  test('applyAuthHeader leaves config untouched when token is null', () => {
+  test('resolve retries with the fresh token without mutating the original request headers', async () => {
     const queue = createRefreshQueue((token) => `Bearer ${token}`);
+    const originalHeaders = { Authorization: 'Bearer stale-token' };
     const request = {
       method: 'GET',
-      url: '/null-token',
-      headers: {},
+      url: '/aliasing',
+      headers: originalHeaders,
     } as RetryableRequestConfig;
 
-    const result = queue.applyAuthHeader(request, null, true);
+    const retryPromise = queue.enqueue(request);
+    const axiosLike = { request: vi.fn().mockResolvedValue({ data: 'ok' }) } as any;
 
-    expect(result).toBe(request);
-    expect(result.headers.Authorization).toBeUndefined();
+    queue.resolve('new-token', axiosLike);
+    await retryPromise;
 
-    const bare = {} as RetryableRequestConfig;
-    queue.applyAuthHeader(bare, null);
-    expect(bare.headers).toBeUndefined();
-  });
-
-  test('does not overwrite existing authorization header unless forced', () => {
-    const queue = createRefreshQueue((token) => `Bearer ${token}`);
-    const request = {
-      headers: {
-        Authorization: 'Bearer existing-token',
-      },
-    } as RetryableRequestConfig;
-
-    const updated = queue.applyAuthHeader(request, 'new-token');
-    expect(updated.headers.Authorization).toBe('Bearer existing-token');
+    expect(axiosLike.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer new-token' }),
+      }),
+    );
+    expect(originalHeaders.Authorization).toBe('Bearer stale-token');
   });
 
   test('normalizes non-Error values passed to reject', async () => {

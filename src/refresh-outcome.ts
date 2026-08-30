@@ -1,7 +1,8 @@
 import type { AxiosInstance } from 'axios';
 
 import type { AccessTokenStore } from './access-token-store';
-import type { RefreshStatus } from './plugin-options';
+import type { HookName, ReportHook } from './hook-error';
+import type { RefreshStatus, RefreshStatusContext } from './plugin-options';
 import type { RefreshQueue } from './refresh-queue';
 import { tryCatch } from './try-catch';
 
@@ -13,9 +14,13 @@ export interface RefreshOutcomeDeps {
   axiosInstance: AxiosInstance;
   queue: RefreshQueue;
   accessTokenStore?: AccessTokenStore;
-  onStatusChange: (status: RefreshStatus, error?: Error) => void;
+  onStatusChange: (status: RefreshStatus, error?: Error, context?: RefreshStatusContext) => void;
   onRefreshSuccess?: (token: string) => void;
   onRefreshFail?: (error: Error) => void;
+  /** Surfaced-hook runner built per install. */
+  reportHook: ReportHook;
+  /** Which refresh attempt settled (1-based). */
+  attemptCount: number;
 }
 
 /**
@@ -26,24 +31,22 @@ export interface RefreshOutcomeDeps {
  * This function never throws.
  */
 export function dispatchRefreshOutcome(deps: RefreshOutcomeDeps): void {
-  const { newToken, refreshError, axiosInstance, queue } = deps;
+  const { newToken, refreshError, axiosInstance, queue, reportHook, attemptCount } = deps;
   const { accessTokenStore, onStatusChange, onRefreshSuccess, onRefreshFail } = deps;
 
-  const safeHook = (hook: () => void): void => {
-    tryCatch(hook);
+  const safeHook = (hookName: HookName, hook: () => void): void => {
+    reportHook(hookName, hook);
   };
 
   const safeStatus = (status: RefreshStatus, error?: Error): void => {
-    // Call without the error arg when absent: hooks often assert exact arity.
+    const context: RefreshStatusContext = { queueDepth: queue.size(), attemptCount };
     if (error === undefined) {
-      safeHook(() => onStatusChange(status));
+      safeHook('onStatusChange', () => onStatusChange(status, undefined, context));
     } else {
-      safeHook(() => onStatusChange(status, error));
+      safeHook('onStatusChange', () => onStatusChange(status, error, context));
     }
   };
 
-  // Storage failures are reported through onStatusChange so they stay visible;
-  // if that report itself throws, safeStatus swallows it.
   const safeStorage = (operation: () => void): void => {
     const [, error] = tryCatch(operation);
     if (error) {
@@ -54,7 +57,7 @@ export function dispatchRefreshOutcome(deps: RefreshOutcomeDeps): void {
   if (refreshError) {
     // Rejected after all retries. Transient, so leave the stored token alone.
     safeStatus('failed', refreshError);
-    safeHook(() => onRefreshFail?.(refreshError));
+    safeHook('onRefreshFail', () => onRefreshFail?.(refreshError));
     queue.reject(refreshError);
     return;
   }
@@ -64,13 +67,13 @@ export function dispatchRefreshOutcome(deps: RefreshOutcomeDeps): void {
     safeStorage(() => accessTokenStore?.clear?.());
     const authOverError = new Error('Token refresh failed: refreshTokenFn returned null');
     safeStatus('failed', authOverError);
-    safeHook(() => onRefreshFail?.(authOverError));
+    safeHook('onRefreshFail', () => onRefreshFail?.(authOverError));
     queue.reject(authOverError);
     return;
   }
 
   safeStorage(() => accessTokenStore?.setAccessToken(newToken));
   safeStatus('success');
-  safeHook(() => onRefreshSuccess?.(newToken));
+  safeHook('onRefreshSuccess', () => onRefreshSuccess?.(newToken));
   queue.resolve(newToken, axiosInstance);
 }

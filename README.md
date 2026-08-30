@@ -17,8 +17,11 @@ A robust Axios plugin that handles token refresh logic when API calls fail due t
 - 🪙 `AccessTokenStore` abstraction — library owns token persistence
 - 🔑 Built-in `createLocalStorageTokenStore` / `createSessionStorageTokenStore` helpers
 - ✅ Automatic auth token injection into outgoing requests (`autoInjectToken`)
+- 🅿️ Mid-refresh requests are parked and released with the fresh token (`pauseRequestsWhileRefreshing`)
 - 🪝 Lifecycle hooks: `onRefreshStart`, `onRefreshSuccess`, `onRefreshFail`
+- 🛠️ `onHookError` surfaces failures from your own hooks
 - ⏰ Configurable timeout for token refresh operations
+- 🛑 Per-attempt `AbortSignal` — timeouts and cleanup stop stale refresh calls
 - 🔑 Customizable auth header formatting
 - 🧠 Optional request dedupe via `getRequestKey` (off by default — every failed request retries independently)
 - 🚫 Per-request refresh opt-out with `skipAuthRefresh`
@@ -83,7 +86,7 @@ const refreshPlugin = createRefreshTokenPlugin({
   },
 });
 
-refreshPlugin(apiClient);
+refreshPlugin.attach(apiClient);
 
 export default apiClient;
 ```
@@ -112,7 +115,7 @@ const refreshPlugin = createRefreshTokenPlugin({
   getAuthToken: () => localStorage.getItem('token'),
 });
 
-refreshPlugin(apiClient);
+refreshPlugin.attach(apiClient);
 
 export default apiClient;
 ```
@@ -171,6 +174,46 @@ declare module 'axios' {
 }
 ```
 
+### Parking requests during a refresh
+
+By default (`pauseRequestsWhileRefreshing: true`) the request interceptor holds
+outgoing requests while a refresh is in flight, then releases them with the
+fresh token. Without the hold, mid-refresh requests race out with the stale
+token, 401, and pile into the retry queue — every such request hits your API
+twice.
+
+Parked requests follow the queue's failure semantics: when the refresh fails
+(or `refreshTokenFn` returns `null`), they are rejected with the same
+`Token refresh failed` error instead of being sent with a dead token. Plugin
+cleanup rejects parked requests immediately. `skipAuthRefresh` requests are
+never parked.
+
+```typescript
+createRefreshTokenPlugin({
+  // ... other options
+  pauseRequestsWhileRefreshing: true, // default
+});
+```
+
+Set `pauseRequestsWhileRefreshing: false` for the old fire-immediately
+behavior. The hold works independently of `autoInjectToken`: with
+`autoInjectToken: false` requests are still parked, but headers stay yours.
+Tokenless requests are never parked — a public call is never held hostage
+to an unrelated refresh.
+
+### Bounding the retry queue
+
+`maxQueueSize` caps how many requests wait for the refresh. When the queue is
+full, the newest refreshable request is rejected with
+`Token refresh queue is full` so the caller can back off instead of piling
+up unbounded memory. Defaults to unlimited.
+
+```typescript
+createRefreshTokenPlugin({
+  maxQueueSize: 100,
+});
+```
+
 ### `AccessTokenStore`
 
 The `AccessTokenStore` interface abstracts token persistence. The library uses it to read the current token, persist refreshed tokens, and (optionally) clear stale tokens. Provide one of `getAuthToken` or `accessTokenStore` — not both.
@@ -227,9 +270,11 @@ The `refreshTokenFn` has three distinct outcomes:
 This lets the consumer control token lifecycle through the return type:
 
 ```typescript
-refreshTokenFn: async () => {
+refreshTokenFn: async (signal) => {
   try {
-    const res = await axios.post('/refresh', { refresh_token: getRefreshToken() });
+    // Forward the attempt's AbortSignal so a timeout or plugin cleanup
+    // stops this call instead of overlapping the next attempt.
+    const res = await axios.post('/refresh', { refresh_token: getRefreshToken() }, { signal });
     return res.data.access_token; // -> setAccessToken
   } catch (e) {
     if (e.response?.status === 401) {
@@ -239,6 +284,11 @@ refreshTokenFn: async () => {
   }
 };
 ```
+
+Each retry attempt receives a fresh `AbortSignal`. It aborts when that attempt
+times out, when the handle is aborted, or when the plugin is cleaned up.
+Ignoring the signal is fine -- the refresh still settles on its own, but the
+previous attempt keeps running in the background while the retry fires.
 
 ### Lifecycle Hooks
 
@@ -273,6 +323,39 @@ createRefreshTokenPlugin({
 
 - `onStatusChange` answers "what state is the system in?" -- useful for UI bindings
 - Lifecycle hooks answer "this specific thing happened" -- useful for side effects, analytics, cache invalidation
+
+`onStatusChange` receives a third argument with context:
+
+```typescript
+onStatusChange: (status, error, context) => {
+  // context.queueDepth: requests waiting in the retry queue
+  // context.attemptCount: which refresh attempt is running (1-based)
+  loadingStore.set(status === 'refreshing');
+  metrics.recordQueueDepth(context.queueDepth);
+},
+```
+
+#### Hook failure visibility
+
+A throwing lifecycle hook never breaks the refresh flow -- the queue always
+settles. Hook failures are surfaced instead of swallowed:
+
+```typescript
+createRefreshTokenPlugin({
+  // ... other options
+
+  onHookError: (error, hookName) => {
+    // Called when onStatusChange / onRefreshStart / onRefreshSuccess /
+    // onRefreshFail throws. Log it, report it -- do not rethrow blindly,
+    // a throwing handler falls back to console.error.
+    sentry.captureException(error, { tags: { hook: hookName } });
+  },
+});
+```
+
+When `onHookError` is omitted (or itself throws), the failure falls back to
+`console.error` so it stays visible. Set `silent: true` to drop that fallback
+for serverless/edge environments where stderr is alarming.
 
 ## TypeScript Usage
 
@@ -324,7 +407,13 @@ const refreshPlugin = createRefreshTokenPlugin(options);
 
 ### `createRefreshTokenPlugin(options)`
 
-Creates an Axios interceptor plugin that handles token refresh.
+Creates an Axios interceptor plugin that handles token refresh. Install it on
+an Axios instance with `refreshPlugin.attach(apiClient)`, which returns a
+cleanup function.
+
+> **Deprecated:** calling the plugin as a function (`refreshPlugin(apiClient)`)
+> still works but is deprecated. Use `refreshPlugin.attach(apiClient)`. The
+> callable form will be removed in a future release.
 
 #### Options
 
@@ -365,7 +454,7 @@ Creates an Axios interceptor plugin that handles token refresh.
 6. If `refreshTokenFn` **throws** (all retries exhausted): all queued requests are rejected with detailed error information. The token is **not** cleared (might be a transient failure).
 7. If `autoInjectToken` is `true` (default), a request interceptor automatically injects the current token into outgoing requests — no manual interceptor needed.
 
-> **Note on timeouts:** `refreshTimeout` bounds how long a refresh attempt is _awaited_, not how long `refreshTokenFn` itself runs. If an attempt times out, the underlying call keeps running in the background (there is no `AbortSignal` plumbing), and the next retry attempt starts immediately. Keep `refreshTokenFn` cheap and idempotent.
+> **Note on timeouts:** `refreshTimeout` bounds how long a refresh attempt is _awaited_. On timeout, the attempt's `AbortSignal` aborts — forward it into your HTTP call to stop the work. A `refreshTokenFn` that ignores the signal keeps running in the background while the next retry starts immediately, so keep it idempotent.
 
 ## Error Handling
 

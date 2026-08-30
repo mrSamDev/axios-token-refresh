@@ -17,7 +17,7 @@ describe('user callbacks never strand queued requests', () => {
     };
     const axios = createMockAxios();
     axios.mockResolvedValue({ data: 'retry-success' });
-    createRefreshTokenPlugin({ refreshTokenFn, accessTokenStore: store })(axios);
+    createRefreshTokenPlugin({ refreshTokenFn, accessTokenStore: store }).attach(axios);
 
     await expect(responseErrorHandler(axios)(authError('/a'))).resolves.toStrictEqual({
       data: 'retry-success',
@@ -40,7 +40,7 @@ describe('user callbacks never strand queued requests', () => {
       clear: throwingCallback('clear failed'),
     };
     const axios = createMockAxios();
-    createRefreshTokenPlugin({ refreshTokenFn, accessTokenStore: store })(axios);
+    createRefreshTokenPlugin({ refreshTokenFn, accessTokenStore: store }).attach(axios);
 
     await expect(responseErrorHandler(axios)(authError('/a'))).rejects.toMatchObject({
       originalError: expect.objectContaining({
@@ -57,7 +57,7 @@ describe('user callbacks never strand queued requests', () => {
       refreshTokenFn,
       getAuthToken: () => 'current-token',
       onStatusChange: throwingCallback('status boom'),
-    })(axios);
+    }).attach(axios);
 
     await expect(responseErrorHandler(axios)(authError('/a'))).resolves.toStrictEqual({
       data: 'retry-success',
@@ -76,7 +76,7 @@ describe('user callbacks never strand queued requests', () => {
       refreshTokenFn,
       getAuthToken: () => 'current-token',
       onRefreshStart: throwingCallback('start boom'),
-    })(axios);
+    }).attach(axios);
 
     await expect(responseErrorHandler(axios)(authError('/a'))).resolves.toStrictEqual({
       data: 'retry-success',
@@ -92,7 +92,7 @@ describe('user callbacks never strand queued requests', () => {
       refreshTokenFn,
       getAuthToken: () => 'current-token',
       onRefreshSuccess: throwingCallback('success boom'),
-    })(axios);
+    }).attach(axios);
 
     await expect(responseErrorHandler(axios)(authError('/a'))).resolves.toStrictEqual({
       data: 'retry-success',
@@ -106,7 +106,7 @@ describe('user callbacks never strand queued requests', () => {
       refreshTokenFn,
       getAuthToken: () => 'current-token',
       onRefreshFail: throwingCallback('fail boom'),
-    })(axios);
+    }).attach(axios);
 
     await expect(responseErrorHandler(axios)(authError('/a'))).rejects.toThrow(
       'Token refresh failed',
@@ -130,7 +130,7 @@ describe('user callbacks never strand queued requests', () => {
         }
         return 'Bearer current-token';
       },
-    })(axios);
+    }).attach(axios);
 
     const first = responseErrorHandler(axios)(authError('/a'));
     const second = responseErrorHandler(axios)(authError('/b'));

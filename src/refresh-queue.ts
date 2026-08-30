@@ -60,7 +60,7 @@ export interface RefreshQueue {
    * @param request The failed request to retry after refresh.
    * @returns A promise that resolves with the retried response or rejects on failure.
    */
-  enqueue: (request: RetryableRequestConfig) => Promise<unknown>;
+  enqueue: (request: RetryableRequestConfig, requestKey?: string) => Promise<unknown>;
   /**
    * Resolve all queued requests: apply the new token and fire each request.
    * When `maxConcurrentRetries` is finite, at most that many retries are in
@@ -77,6 +77,8 @@ export interface RefreshQueue {
    * @param refreshError The error that caused the refresh to fail.
    */
   reject: (refreshError: unknown) => void;
+  /** Number of requests currently waiting in the queue. */
+  size: () => number;
   /** Clear the queue and the request-promise map. */
   reset: () => void;
 }
@@ -90,12 +92,15 @@ export interface RefreshQueue {
  *   independently.
  * @param maxConcurrentRetries Max retried requests in flight at once. Defaults
  *   to unlimited (all queued retries fire simultaneously).
+ * @param maxQueueSize Max requests held in the queue. Defaults to unlimited.
+ *   When full, the newest request is rejected with `Token refresh queue is full`.
  * @returns A {@link RefreshQueue} instance.
  */
 export function createRefreshQueue(
   authHeaderFormatter: (token: string) => string,
   getRequestKey?: (config: AxiosRequestConfig) => string,
   maxConcurrentRetries: number = Number.POSITIVE_INFINITY,
+  maxQueueSize: number = Number.POSITIVE_INFINITY,
 ): RefreshQueue {
   const pendingRequests: QueueItem[] = [];
   const requestPromiseMap = new Map<string, Promise<unknown>>();
@@ -105,11 +110,18 @@ export function createRefreshQueue(
     requestPromiseMap.clear();
   };
 
-  const enqueue = (request: RetryableRequestConfig): Promise<unknown> => {
-    const requestKey = getRequestKey?.(request);
+  const enqueue = (request: RetryableRequestConfig, requestKey?: string): Promise<unknown> => {
+    // Reject (don't throw) so overflow never cascades into the key-fn error path.
+    if (pendingRequests.length >= maxQueueSize) {
+      return Promise.reject(new Error('Token refresh queue is full'));
+    }
 
-    if (requestKey !== undefined) {
-      const existing = requestPromiseMap.get(requestKey);
+    // A caller may precompute the key from a different config (e.g. the
+    // original request, not the _retry clone); fall back to getRequestKey.
+    const key = requestKey ?? getRequestKey?.(request);
+
+    if (key !== undefined) {
+      const existing = requestPromiseMap.get(key);
       if (existing) {
         return existing;
       }
@@ -122,8 +134,8 @@ export function createRefreshQueue(
       rejectFn = reject;
     });
 
-    if (requestKey !== undefined) {
-      requestPromiseMap.set(requestKey, retryPromise);
+    if (key !== undefined) {
+      requestPromiseMap.set(key, retryPromise);
     }
 
     pendingRequests.push({ request, resolve: resolveFn, reject: rejectFn });
@@ -161,6 +173,7 @@ export function createRefreshQueue(
     enqueue,
     resolve,
     reject,
+    size: () => pendingRequests.length,
     reset,
   };
 }

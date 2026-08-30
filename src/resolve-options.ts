@@ -12,7 +12,7 @@ export interface ResolvedOptions {
 }
 
 interface ResolveInput {
-  refreshTokenFn: () => Promise<string | null>;
+  refreshTokenFn: (signal: AbortSignal) => Promise<string | null>;
   getAuthToken?: () => string | null;
   accessTokenStore?: AccessTokenStore;
   shouldRefreshToken?: RefreshTokenPluginOptions['shouldRefreshToken'];
@@ -20,6 +20,7 @@ interface ResolveInput {
   maxRetryAttempts: number;
   retryDelay: number;
   maxConcurrentRetries?: number;
+  maxQueueSize?: number;
 }
 
 /**
@@ -39,6 +40,7 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     maxRetryAttempts,
     retryDelay,
     maxConcurrentRetries,
+    maxQueueSize,
   } = input;
 
   if (typeof refreshTokenFn !== 'function') {
@@ -83,6 +85,10 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     (!Number.isInteger(maxConcurrentRetries) || maxConcurrentRetries < 1)
   ) {
     throw new Error('maxConcurrentRetries must be an integer greater than or equal to 1');
+  }
+
+  if (maxQueueSize !== undefined && (!Number.isInteger(maxQueueSize) || maxQueueSize < 1)) {
+    throw new Error('maxQueueSize must be an integer greater than or equal to 1');
   }
 
   // After validation, exactly one of the two is defined.

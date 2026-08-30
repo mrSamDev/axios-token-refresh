@@ -34,7 +34,7 @@ describe('real axios dispatch', () => {
     createRefreshTokenPlugin({
       refreshTokenFn: vi.fn().mockResolvedValue('fresh-token'),
       getAuthToken: () => 'stale-token',
-    })(api);
+    }).attach(api);
 
     const response = await api.get('/protected');
 
@@ -49,7 +49,7 @@ describe('real axios dispatch', () => {
     createRefreshTokenPlugin({
       refreshTokenFn: vi.fn().mockResolvedValue('still-stale'),
       getAuthToken: () => 'stale-token',
-    })(api);
+    }).attach(api);
 
     const handled = api.get('/protected').then(
       (value) => ({ status: 'fulfilled' as const, value }),

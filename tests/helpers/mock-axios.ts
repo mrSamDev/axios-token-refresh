@@ -35,6 +35,8 @@ export const createMockAxios = () => {
 export const responseErrorHandler = (instance: any) =>
   instance.interceptors.response.use.mock.calls[0][1];
 
+export const requestHandler = (instance: any) => instance.interceptors.request.use.mock.calls[0][0];
+
 export const authError = (url: string) => ({
   response: { status: 401 },
   config: {

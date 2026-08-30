@@ -51,7 +51,10 @@ export const launchRetries = (options: LaunchRetriesOptions): void => {
 
       let attempt: Promise<unknown>;
       try {
-        const requestConfig: RetryableRequestConfig = { ...request };
+        const requestConfig: RetryableRequestConfig = {
+          ...request,
+          headers: { ...request.headers } as RetryableRequestConfig['headers'],
+        };
         applyAuthHeader(requestConfig, newToken, authHeaderFormatter, true);
         attempt = executeRequest(axiosInstance, requestConfig);
       } catch (setupError) {
@@ -66,8 +69,6 @@ export const launchRetries = (options: LaunchRetriesOptions): void => {
           inFlight -= 1;
           launchNext();
         })
-        // The queued caller receives the attempt's own rejection; this
-        // chain only tracks concurrency slots.
         .catch(() => {});
     }
   };
