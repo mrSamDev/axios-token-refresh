@@ -19,6 +19,11 @@ import { tryCatch } from './try-catch';
  * @returns A function that, when called with an Axios instance, installs the
  *   interceptors and returns a cleanup function to eject them.
  *
+ *   Each install owns its queue and refresh lifecycle: installing on two
+ *   instances refreshes them independently, and cleaning up one install
+ *   never affects another. Install on multiple instances only with a
+ *   rotation-safe `refreshTokenFn` (each install may refresh concurrently).
+ *
  * @example
  * ```ts
  * import axios from "axios";
@@ -70,12 +75,16 @@ export function createRefreshTokenPlugin({
     maxConcurrentRetries,
   });
 
-  const queue = createRefreshQueue(authHeaderFormatter, getRequestKey, maxConcurrentRetries);
-  let isRefreshing = false;
-  let refreshPromise: Promise<string | null> | null = null;
-  let cleanedUp = false;
+  // Per-install state: each plugin install owns its queue and refresh
+  // lifecycle. Installing on two instances refreshes them independently,
+  // and cleaning up one install never affects another.
 
   return (axios: AxiosInstance) => {
+    const queue = createRefreshQueue(authHeaderFormatter, getRequestKey, maxConcurrentRetries);
+    let isRefreshing = false;
+    let refreshPromise: Promise<string | null> | null = null;
+    let cleanedUp = false;
+
     const handleInterceptorError = (interceptorError: unknown): Promise<never> => {
       const handledError =
         interceptorError instanceof Error
@@ -161,14 +170,14 @@ export function createRefreshTokenPlugin({
               onRefreshFail?.(refreshError);
               queue.reject(refreshError);
             } else if (newToken === null) {
-              // null. Auth is over; clear the token if the store supports it.
+              // null: auth is over.
               accessTokenStore?.clear?.();
               const authOverError = new Error('Token refresh failed: refreshTokenFn returned null');
               onStatusChange('failed', authOverError);
               onRefreshFail?.(authOverError);
               queue.reject(authOverError);
             } else {
-              // string. Refresh succeeded; persist the token if a store is provided.
+              // string: refresh succeeded.
               accessTokenStore?.setAccessToken(newToken);
               onStatusChange('success');
               onRefreshSuccess?.(newToken);

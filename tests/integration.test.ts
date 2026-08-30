@@ -363,7 +363,7 @@ describe('integration: real axios interceptors', () => {
 
     contexts.push({ cleanup, apiMock, authMock });
 
-    // null return means auth is over — queue is rejected, no retry.
+    // null return means auth is over: queue is rejected, no retry.
     await expect(apiClient.get('/nullable')).rejects.toMatchObject({
       message: 'Token refresh failed',
       originalError: expect.objectContaining({

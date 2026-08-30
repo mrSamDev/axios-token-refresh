@@ -45,7 +45,6 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     throw new Error('refreshTokenFn must be a function');
   }
 
-  // Mutual exclusion: getAuthToken vs accessTokenStore
   if (accessTokenStore && getAuthToken !== undefined) {
     throw new Error('Cannot provide both getAuthToken and accessTokenStore. Use one or the other.');
   }

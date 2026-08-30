@@ -381,7 +381,7 @@ describe('accessTokenStore: no clear on thrown error', () => {
 });
 
 // ---------------------------------------------------------------------------
-// clear() is optional — store without clear
+// clear() is optional: store without clear
 // ---------------------------------------------------------------------------
 describe('accessTokenStore: clear is optional', () => {
   let mockAxios: any;

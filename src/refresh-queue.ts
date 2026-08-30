@@ -54,7 +54,7 @@ export interface RefreshQueue {
   /**
    * Add a request to the queue. Dedupe only happens when the queue was
    * created with a `getRequestKey`: requests sharing a key share one retry
-   * promise. Without `getRequestKey` every request gets its own retry — two
+   * promise. Without `getRequestKey` every request gets its own retry: two
    * identical-looking requests are still distinct calls expecting distinct
    * responses.
    *

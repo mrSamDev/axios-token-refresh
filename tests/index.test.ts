@@ -3,7 +3,7 @@ import { beforeAll, afterAll, beforeEach, describe, test, expect, vi } from 'vit
 import { createRefreshTokenPlugin } from '../src/index';
 import { tryCatch } from '../src/try-catch';
 
-// Mock console.error to prevent test output pollution
+// Mock console.error to keep test output clean
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -441,7 +441,7 @@ describe('createRefreshTokenPlugin', () => {
         refreshTokenFn: slowRefreshFn,
         getAuthToken: mockGetAuthToken,
         onStatusChange: mockOnStatusChange,
-        refreshTimeout: 50, // Short timeout for testing
+        refreshTimeout: 50,
       });
 
       plugin(timeoutMockAxios);
@@ -456,10 +456,9 @@ describe('createRefreshTokenPlugin', () => {
         },
       };
 
-      // Test the timeout scenario
       await expect(interceptor(error)).rejects.toThrow('Token refresh failed');
 
-      // Wait a bit more to ensure the timeout has triggered
+      // Give the background refresh task time to settle before asserting
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(mockOnStatusChange).toHaveBeenCalledWith('failed', expect.any(Error));
