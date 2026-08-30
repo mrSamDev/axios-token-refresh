@@ -75,6 +75,7 @@ export function createRefreshTokenPlugin({
   const queue = createRefreshQueue(authHeaderFormatter, getRequestKey, maxConcurrentRetries);
   let isRefreshing = false;
   let refreshPromise: Promise<string | null> | null = null;
+  let cleanedUp = false;
 
   return (axios: AxiosInstance) => {
     const handleInterceptorError = (interceptorError: unknown): Promise<never> => {
@@ -151,6 +152,11 @@ export function createRefreshTokenPlugin({
             const [newToken, refreshError] = await tryCatch<string | null, Error>(
               refreshPromise as Promise<string | null>,
             );
+            // cleanup() already rejected the queue and ejected the interceptors;
+            // a late refresh result must not touch the store or fire hooks.
+            if (cleanedUp) {
+              return;
+            }
             if (refreshError) {
               // Rejected after all retries. Transient, so leave the stored token alone.
               onStatusChange('failed', refreshError);
@@ -183,6 +189,7 @@ export function createRefreshTokenPlugin({
     );
 
     return () => {
+      cleanedUp = true;
       queue.reject(new Error('Refresh interceptor cleaned up'));
 
       if (autoInjectToken && typeof axios?.interceptors?.request?.eject === 'function') {

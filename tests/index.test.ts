@@ -842,6 +842,52 @@ describe('createRefreshTokenPlugin', () => {
         });
       }
     });
+
+    test('does not persist the token or fire success hooks after cleanup', async () => {
+      let resolveRefresh!: (token: string | null) => void;
+      const deferredRefresh = new Promise<string | null>((resolve) => {
+        resolveRefresh = resolve;
+      });
+      const setAccessToken = vi.fn();
+      const clear = vi.fn();
+      const onRefreshSuccess = vi.fn();
+
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: () => deferredRefresh,
+        accessTokenStore: {
+          getAccessToken: mockGetAuthToken,
+          setAccessToken,
+          clear,
+        },
+        onStatusChange: mockOnStatusChange,
+        onRefreshSuccess,
+      });
+
+      const cleanup = plugin(mockAxios);
+      const responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
+      const error = {
+        response: { status: 401 },
+        config: {
+          method: 'GET',
+          url: '/post-cleanup-write',
+          headers: {},
+        },
+      };
+
+      const requestHandled = responseInterceptor(error).catch((reason) => reason);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      cleanup();
+      resolveRefresh('post-cleanup-token');
+
+      await requestHandled;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(setAccessToken).not.toHaveBeenCalled();
+      expect(onRefreshSuccess).not.toHaveBeenCalled();
+      expect(mockOnStatusChange).not.toHaveBeenCalledWith('success');
+      expect(clear).not.toHaveBeenCalled();
+    });
   });
 });
 
