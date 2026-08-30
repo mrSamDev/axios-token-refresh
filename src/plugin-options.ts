@@ -49,7 +49,13 @@ export interface RefreshTokenPluginOptions {
   /** Dedupe key for queued requests; requests with the same key share one retry. Omit to retry every failed request independently. */
   getRequestKey?: (request: AxiosRequestConfig) => string;
 
-  /** Timeout in ms for a single refresh attempt. Defaults to `10000`. */
+  /**
+   * Timeout in ms for a single refresh attempt. Defaults to `10000`.
+   *
+   * Bounds the *await*, not the work: on timeout the underlying
+   * `refreshTokenFn` keeps running in the background (no cancellation), and
+   * the next retry starts immediately.
+   */
   refreshTimeout?: number;
 
   /** Max refresh attempts (including the first). Integer `>= 1`. Defaults to `1`. */

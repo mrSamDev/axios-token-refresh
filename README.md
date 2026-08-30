@@ -359,6 +359,8 @@ Creates an Axios interceptor plugin that handles token refresh.
 6. If `refreshTokenFn` **throws** (all retries exhausted): all queued requests are rejected with detailed error information. The token is **not** cleared (might be a transient failure).
 7. If `autoInjectToken` is `true` (default), a request interceptor automatically injects the current token into outgoing requests — no manual interceptor needed.
 
+> **Note on timeouts:** `refreshTimeout` bounds how long a refresh attempt is _awaited_, not how long `refreshTokenFn` itself runs. If an attempt times out, the underlying call keeps running in the background (there is no `AbortSignal` plumbing), and the next retry attempt starts immediately. Keep `refreshTokenFn` cheap and idempotent.
+
 ## Error Handling
 
 The plugin provides detailed error information when token refresh fails:
