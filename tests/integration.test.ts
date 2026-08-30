@@ -286,7 +286,7 @@ describe('integration: real axios interceptors', () => {
     expect(elapsedMs).toBeGreaterThanOrEqual(90);
   });
 
-  test('refresh returning null does not force auth header on retried request', async () => {
+  test('refresh returning null rejects queued requests without retrying', async () => {
     const apiClient = axios.create();
     const authClient = axios.create();
     const apiMock = new MockAdapter(apiClient);
@@ -317,12 +317,14 @@ describe('integration: real axios interceptors', () => {
 
     contexts.push({ cleanup, apiMock, authMock });
 
+    // null return means auth is over — queue is rejected, no retry.
     await expect(apiClient.get('/nullable')).rejects.toMatchObject({
-      response: {
-        status: 401,
-      },
+      message: 'Token refresh failed',
+      originalError: expect.objectContaining({
+        message: 'Token refresh failed: refreshTokenFn returned null',
+      }),
     });
     expect(authMock.history.post.length).toBe(1);
-    expect(apiMock.history.get.length).toBe(2);
+    expect(apiMock.history.get.length).toBe(1);
   });
 });
