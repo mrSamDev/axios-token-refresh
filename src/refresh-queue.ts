@@ -2,7 +2,8 @@
  * Internal request queue used by the refresh token plugin.
  *
  * This module manages the queue of pending requests while a token refresh is
- * in progress. It deduplicates requests by key, applies the new auth header
+ * in progress. It optionally deduplicates requests by key (when a `getRequestKey`
+ * is supplied), applies the new auth header
  * once a refresh succeeds, and rejects all queued requests if the refresh
  * fails.
  *
