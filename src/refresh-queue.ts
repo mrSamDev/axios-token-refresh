@@ -12,6 +12,8 @@
 
 import type { AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
+import { applyAuthHeader } from './auth-header';
+
 export type RefreshFailedError = Error & {
   originalError?: Error;
 };
@@ -101,22 +103,6 @@ export function createRefreshQueue(
   const pendingRequests: QueueItem[] = [];
   const requestPromiseMap = new Map<string, Promise<unknown>>();
 
-  const applyAuthHeader = (
-    config: RetryableRequestConfig,
-    token: string | null,
-    force = false,
-  ): RetryableRequestConfig => {
-    if (!token) {
-      return config;
-    }
-
-    const headers = (config.headers ??= {} as RetryableRequestConfig['headers']);
-    if (force || !headers.Authorization) {
-      headers.Authorization = authHeaderFormatter(token);
-    }
-    return config;
-  };
-
   const reset = (): void => {
     pendingRequests.length = 0;
     requestPromiseMap.clear();
@@ -171,12 +157,26 @@ export function createRefreshQueue(
 
     const launchNext = (): void => {
       while (inFlight < maxConcurrentRetries && cursor < requestsToResolve.length) {
-        const { request, resolve: resolveRequest } = requestsToResolve[cursor];
+        const {
+          request,
+          resolve: resolveRequest,
+          reject: rejectRequest,
+        } = requestsToResolve[cursor];
         cursor += 1;
-        const requestConfig: RetryableRequestConfig = { ...request };
-        applyAuthHeader(requestConfig, newToken, true);
+
+        let attempt: Promise<unknown>;
+        try {
+          const requestConfig: RetryableRequestConfig = { ...request };
+          applyAuthHeader(requestConfig, newToken, authHeaderFormatter, true);
+          attempt = executeRequest(axiosInstance, requestConfig);
+        } catch (setupError) {
+          // Formatter or instance setup threw: fail this request only, keep
+          // draining the rest.
+          rejectRequest(setupError);
+          continue;
+        }
+
         inFlight += 1;
-        const attempt = executeRequest(axiosInstance, requestConfig);
         resolveRequest(attempt);
         Promise.resolve(attempt)
           .finally(() => {
@@ -205,7 +205,8 @@ export function createRefreshQueue(
   };
 
   return {
-    applyAuthHeader,
+    applyAuthHeader: (config, token, force) =>
+      applyAuthHeader(config, token, authHeaderFormatter, force),
     enqueue,
     resolve,
     reject,

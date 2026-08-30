@@ -1,49 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { createRefreshTokenPlugin } from '../src/index';
-
-// Minimal axios-like mock, mirrors the one in index.test.ts but scoped here so
-// lifecycle tests stay independent of that file's suite state.
-const createMockAxios = () => {
-  const instance = vi.fn() as any;
-
-  instance.interceptors = {
-    request: {
-      handlers: [],
-      use: vi.fn((onFulfilled, onRejected) => {
-        instance.interceptors.request.handlers.push({ onFulfilled, onRejected });
-        return instance.interceptors.request.handlers.length - 1;
-      }),
-      eject: vi.fn((id) => {
-        if (id >= 0) instance.interceptors.request.handlers[id] = null;
-      }),
-    },
-    response: {
-      handlers: [],
-      use: vi.fn((onFulfilled, onRejected) => {
-        instance.interceptors.response.handlers.push({ onFulfilled, onRejected });
-        return instance.interceptors.response.handlers.length - 1;
-      }),
-      eject: vi.fn((id) => {
-        if (id >= 0) instance.interceptors.response.handlers[id] = null;
-      }),
-    },
-  };
-
-  instance.request = vi.fn();
-  return instance;
-};
-
-const authError = (url: string) => ({
-  response: { status: 401 },
-  config: {
-    method: 'GET',
-    url,
-    headers: {},
-  },
-});
-
-const responseErrorHandler = (instance: any) => instance.interceptors.response.use.mock.calls[0][1];
+import { authError, createMockAxios, responseErrorHandler } from './helpers/mock-axios';
 
 describe('install lifecycle', () => {
   test('cleanup then reinstall on a new instance refreshes normally', async () => {

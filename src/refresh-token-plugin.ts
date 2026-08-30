@@ -2,6 +2,7 @@ import type { AxiosError, AxiosInstance } from 'axios';
 
 import type { RefreshTokenPluginOptions } from './plugin-options';
 import { createRefreshPromise } from './refresh-attempts';
+import { dispatchRefreshOutcome } from './refresh-outcome';
 import { createRefreshQueue, type RetryableRequestConfig } from './refresh-queue';
 import { resolvePluginOptions } from './resolve-options';
 import { tryCatch } from './try-catch';
@@ -90,14 +91,15 @@ export function createRefreshTokenPlugin({
         interceptorError instanceof Error
           ? interceptorError
           : new Error('Unknown error in refresh token interceptor');
-      onStatusChange('error', handledError);
 
-      // Keep isRefreshing/refreshPromise as-is: resetting them here would let
-      // the next 401 start a second refresh while the first still runs.
+      // Drain first: a throwing onStatusChange must not strand queued requests.
       if (isRefreshing && refreshPromise) {
         queue.reject(handledError);
       }
+      tryCatch(() => onStatusChange('error', handledError));
 
+      // Keep isRefreshing/refreshPromise as-is: resetting them here would let
+      // the next 401 start a second refresh while the first still runs.
       return Promise.reject(handledError);
     };
 
@@ -145,8 +147,8 @@ export function createRefreshTokenPlugin({
 
         if (!isRefreshing) {
           isRefreshing = true;
-          onStatusChange('refreshing');
-          onRefreshStart?.();
+          tryCatch(() => onStatusChange('refreshing'));
+          tryCatch(() => onRefreshStart?.());
           refreshPromise = createRefreshPromise({
             refreshTokenFn,
             refreshTimeout,
@@ -164,29 +166,24 @@ export function createRefreshTokenPlugin({
             if (cleanedUp) {
               return;
             }
-            if (refreshError) {
-              // Rejected after all retries. Transient, so leave the stored token alone.
-              onStatusChange('failed', refreshError);
-              onRefreshFail?.(refreshError);
-              queue.reject(refreshError);
-            } else if (newToken === null) {
-              // null: auth is over.
-              accessTokenStore?.clear?.();
-              const authOverError = new Error('Token refresh failed: refreshTokenFn returned null');
-              onStatusChange('failed', authOverError);
-              onRefreshFail?.(authOverError);
-              queue.reject(authOverError);
-            } else {
-              // string: refresh succeeded.
-              accessTokenStore?.setAccessToken(newToken);
-              onStatusChange('success');
-              onRefreshSuccess?.(newToken);
-              queue.resolve(newToken, axios);
-            }
-
-            if (isRefreshing) {
-              isRefreshing = false;
-              refreshPromise = null;
+            try {
+              dispatchRefreshOutcome({
+                newToken,
+                refreshError,
+                axiosInstance: axios,
+                queue,
+                accessTokenStore,
+                onStatusChange,
+                onRefreshSuccess,
+                onRefreshFail,
+              });
+            } finally {
+              // dispatchRefreshOutcome never throws; finally is a backstop so
+              // a bug there can never wedge isRefreshing and hang the next 401.
+              if (isRefreshing) {
+                isRefreshing = false;
+                refreshPromise = null;
+              }
             }
           })();
         }
