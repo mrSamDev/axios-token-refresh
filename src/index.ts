@@ -10,6 +10,7 @@ import { createRefreshTokenPlugin } from './refresh-token-plugin';
 
 export type { RefreshTokenPluginOptions, RefreshStatus } from './plugin-options';
 export type { AccessTokenStore } from './access-token-store';
+export type { RefreshFailedError, RetryableRequestConfig } from './refresh-queue';
 export { createLocalStorageTokenStore, createSessionStorageTokenStore } from './access-token-store';
 
 export { createRefreshTokenPlugin };

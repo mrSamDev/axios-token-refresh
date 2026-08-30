@@ -316,6 +316,12 @@ const refreshPlugin = createRefreshTokenPlugin(options);
 
 ## API Reference
 
+### Exports
+
+- `createRefreshTokenPlugin(options)` (also default export)
+- `createLocalStorageTokenStore(key)` / `createSessionStorageTokenStore(key)`
+- Types: `RefreshTokenPluginOptions`, `RefreshStatus`, `AccessTokenStore`, `RetryableRequestConfig` (Axios config with the `_retry` / `skipAuthRefresh` flags), `RefreshFailedError` (`Error` with `originalError`, thrown to queued requests when a refresh fails)
+
 ### `createRefreshTokenPlugin(options)`
 
 Creates an Axios interceptor plugin that handles token refresh.
@@ -328,7 +334,7 @@ Creates an Axios interceptor plugin that handles token refresh.
 | `getAuthToken`         | `() => string \| null`                                    | One of*  | -                                             | Function that returns the current auth token. Mutually exclusive with `accessTokenStore`.                                                                                                      |
 | `accessTokenStore`     | `AccessTokenStore`                                        | One of*  | -                                             | Storage abstraction for the access token. Library auto-persists on refresh and auto-clears on `null` return. Mutually exclusive with `getAuthToken`.                                           |
 | `shouldRefreshToken`   | `(error: AxiosError, originalRequest: object) => boolean` | No       | Checks for 401 status or network errors       | Function that determines if token refresh should be triggered.                                                                                                                                 |
-| `onStatusChange`       | `(status: string, error?: Error) => void`                 | No       | Console log function                          | Callback for token refresh status updates. Status can be "refreshing", "success", "failed", or "error".                                                                                        |
+| `onStatusChange`       | `(status: string, error?: Error) => void`                 | No       | No-op                                         | Callback for token refresh status updates. Status can be "refreshing", "success", "failed", or "error".                                                                                        |
 | `onRefreshStart`       | `() => void`                                              | No       | -                                             | Fired when a token refresh begins. Complementary to `onStatusChange`.                                                                                                                          |
 | `onRefreshSuccess`     | `(token: string) => void`                                 | No       | -                                             | Fired when refresh succeeds, with the new token string.                                                                                                                                        |
 | `onRefreshFail`        | `(error: Error) => void`                                  | No       | -                                             | Fired when refresh fails (thrown error or `null` return).                                                                                                                                      |

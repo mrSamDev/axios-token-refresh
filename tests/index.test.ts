@@ -537,6 +537,25 @@ describe('createRefreshTokenPlugin', () => {
         expect.objectContaining({ message: 'attempt-2' }),
       );
     });
+
+    test('default onStatusChange stays silent (no console.log)', async () => {
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: mockRefreshTokenFn,
+        getAuthToken: mockGetAuthToken,
+      });
+
+      plugin(mockAxios);
+      const interceptorCalls = mockAxios.interceptors.response.use.mock.calls;
+      const responseInterceptor = interceptorCalls[interceptorCalls.length - 1][1];
+      const error = {
+        response: { status: 401 },
+        config: { method: 'GET', url: '/silent-default', headers: {} },
+      };
+
+      await responseInterceptor(error);
+
+      expect(console.log).not.toHaveBeenCalled();
+    });
   });
 
   describe('Custom Options', () => {

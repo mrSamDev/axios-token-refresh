@@ -12,7 +12,7 @@
 
 import type { AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
-type RefreshFailedError = Error & {
+export type RefreshFailedError = Error & {
   originalError?: Error;
 };
 

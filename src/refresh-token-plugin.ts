@@ -47,9 +47,7 @@ export function createRefreshTokenPlugin({
   getAuthToken,
   accessTokenStore,
   shouldRefreshToken,
-  onStatusChange = (status, error) => {
-    console.log(`Token refresh status: ${status}`, error || '');
-  },
+  onStatusChange = () => {},
   onRefreshStart,
   onRefreshSuccess,
   onRefreshFail,

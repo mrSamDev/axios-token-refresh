@@ -34,7 +34,10 @@ export interface RefreshTokenPluginOptions {
    */
   shouldRefreshToken?: (error: AxiosError, originalRequest: AxiosRequestConfig) => boolean;
 
-  /** Called on every status change. Use for UI state; the `onRefresh*` hooks carry the token/error for side effects. */
+  /**
+   * Called on every status change. Use for UI state; the `onRefresh*` hooks
+   * carry the token/error for side effects. Defaults to a no-op.
+   */
   onStatusChange?: (status: RefreshStatus, error?: Error) => void;
 
   onRefreshStart?: () => void;
