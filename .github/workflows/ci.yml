@@ -1,21 +1,25 @@
-name: Release
+name: CI and Release
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
+  pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   ci:
-    if: github.event_name == 'pull_request'
+    # PRs and pushes to main: tags skip this job, the release job runs its own
+    # tests before publishing.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: [22, 24]
-
+    permissions: {}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +47,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
-        run: pnpm test
+        run: pnpm test:coverage
 
       - name: Build
         run: pnpm build
@@ -74,7 +78,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test
+        run: pnpm test:coverage
 
       - name: Build
         run: pnpm run build

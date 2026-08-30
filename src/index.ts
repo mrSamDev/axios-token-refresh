@@ -8,8 +8,15 @@
 
 import { createRefreshTokenPlugin } from './refresh-token-plugin';
 
-export type { RefreshTokenPluginOptions, RefreshStatus } from './plugin-options';
+export type {
+  RefreshPlugin,
+  RefreshTokenPluginOptions,
+  RefreshStatus,
+  RefreshStatusContext,
+} from './plugin-options';
 export type { AccessTokenStore } from './access-token-store';
+export type { HookName, OnHookError } from './hook-error';
+export type { RefreshFailedError, RetryableRequestConfig } from './refresh-queue';
 export { createLocalStorageTokenStore, createSessionStorageTokenStore } from './access-token-store';
 
 export { createRefreshTokenPlugin };

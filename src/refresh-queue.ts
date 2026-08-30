@@ -2,7 +2,8 @@
  * Internal request queue used by the refresh token plugin.
  *
  * This module manages the queue of pending requests while a token refresh is
- * in progress. It deduplicates requests by key, applies the new auth header
+ * in progress. It optionally deduplicates requests by key (when a `getRequestKey`
+ * is supplied), applies the new auth header
  * once a refresh succeeds, and rejects all queued requests if the refresh
  * fails.
  *
@@ -11,7 +12,10 @@
 
 import type { AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
-type RefreshFailedError = Error & {
+import { applyAuthHeader } from './auth-header';
+import { launchRetries, type QueuedRequest } from './retry-launcher';
+
+export type RefreshFailedError = Error & {
   originalError?: Error;
 };
 
@@ -29,12 +33,7 @@ export type RetryableRequestConfig = InternalAxiosRequestConfig & {
   skipAuthRefresh?: boolean;
 };
 
-type QueueItem = {
-  request: RetryableRequestConfig;
-  requestKey: string;
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-};
+type QueueItem = QueuedRequest;
 
 /** The public surface returned by {@link createRefreshQueue}. */
 export interface RefreshQueue {
@@ -52,15 +51,20 @@ export interface RefreshQueue {
     force?: boolean,
   ) => RetryableRequestConfig;
   /**
-   * Add a request to the queue. If a request with the same key is already
-   * pending, the existing promise is returned instead of enqueuing a duplicate.
+   * Add a request to the queue. Dedupe only happens when the queue was
+   * created with a `getRequestKey`: requests sharing a key share one retry
+   * promise. Without `getRequestKey` every request gets its own retry: two
+   * identical-looking requests are still distinct calls expecting distinct
+   * responses.
    *
    * @param request The failed request to retry after refresh.
    * @returns A promise that resolves with the retried response or rejects on failure.
    */
-  enqueue: (request: RetryableRequestConfig) => Promise<unknown>;
+  enqueue: (request: RetryableRequestConfig, requestKey?: string) => Promise<unknown>;
   /**
    * Resolve all queued requests: apply the new token and fire each request.
+   * When `maxConcurrentRetries` is finite, at most that many retries are in
+   * flight at once.
    *
    * @param newToken The freshly obtained token, or `null`.
    * @param axiosInstance The Axios instance used to execute the retried requests.
@@ -73,58 +77,54 @@ export interface RefreshQueue {
    * @param refreshError The error that caused the refresh to fail.
    */
   reject: (refreshError: unknown) => void;
+  /** Number of requests currently waiting in the queue. */
+  size: () => number;
   /** Clear the queue and the request-promise map. */
   reset: () => void;
 }
-
-const getDefaultRequestKey = (config?: RetryableRequestConfig): string => {
-  const method = (config?.method || 'get').toLowerCase();
-  const url = config?.url || '';
-  const params = JSON.stringify(config?.params || {});
-  return `${method}-${url}-${params}`;
-};
 
 /**
  * Create a request queue that holds pending requests during a token refresh.
  *
  * @param authHeaderFormatter Transforms a token into the `Authorization` header value.
- * @param getRequestKey Optional custom dedupe key generator. Defaults to `method-url-params`.
+ * @param getRequestKey Optional dedupe key generator. When provided, requests
+ *   with the same key share one retry. Omit it to retry every failed request
+ *   independently.
+ * @param maxConcurrentRetries Max retried requests in flight at once. Defaults
+ *   to unlimited (all queued retries fire simultaneously).
+ * @param maxQueueSize Max requests held in the queue. Defaults to unlimited.
+ *   When full, the newest request is rejected with `Token refresh queue is full`.
  * @returns A {@link RefreshQueue} instance.
  */
 export function createRefreshQueue(
   authHeaderFormatter: (token: string) => string,
   getRequestKey?: (config: AxiosRequestConfig) => string,
+  maxConcurrentRetries: number = Number.POSITIVE_INFINITY,
+  maxQueueSize: number = Number.POSITIVE_INFINITY,
 ): RefreshQueue {
   const pendingRequests: QueueItem[] = [];
   const requestPromiseMap = new Map<string, Promise<unknown>>();
-
-  const applyAuthHeader = (
-    config: RetryableRequestConfig,
-    token: string | null,
-    force = false,
-  ): RetryableRequestConfig => {
-    if (!token) {
-      return config;
-    }
-
-    const headers = (config.headers ??= {} as RetryableRequestConfig['headers']);
-    if (force || !headers.Authorization) {
-      headers.Authorization = authHeaderFormatter(token);
-    }
-    return config;
-  };
 
   const reset = (): void => {
     pendingRequests.length = 0;
     requestPromiseMap.clear();
   };
 
-  const enqueue = (request: RetryableRequestConfig): Promise<unknown> => {
-    const configuredRequestKey = getRequestKey?.(request);
-    const requestKey = configuredRequestKey || getDefaultRequestKey(request);
-    const existing = requestPromiseMap.get(requestKey);
-    if (existing) {
-      return existing;
+  const enqueue = (request: RetryableRequestConfig, requestKey?: string): Promise<unknown> => {
+    // Reject (don't throw) so overflow never cascades into the key-fn error path.
+    if (pendingRequests.length >= maxQueueSize) {
+      return Promise.reject(new Error('Token refresh queue is full'));
+    }
+
+    // A caller may precompute the key from a different config (e.g. the
+    // original request, not the _retry clone); fall back to getRequestKey.
+    const key = requestKey ?? getRequestKey?.(request);
+
+    if (key !== undefined) {
+      const existing = requestPromiseMap.get(key);
+      if (existing) {
+        return existing;
+      }
     }
 
     let resolveFn!: (value: unknown) => void;
@@ -134,34 +134,24 @@ export function createRefreshQueue(
       rejectFn = reject;
     });
 
-    pendingRequests.push({ request, requestKey, resolve: resolveFn, reject: rejectFn });
-    requestPromiseMap.set(requestKey, retryPromise);
-    return retryPromise;
-  };
-
-  const executeRequest = (
-    axiosInstance: AxiosInstance,
-    request: RetryableRequestConfig,
-  ): Promise<unknown> => {
-    const callableInstance = axiosInstance as unknown as (
-      config: RetryableRequestConfig,
-    ) => Promise<unknown>;
-
-    if (typeof callableInstance === 'function') {
-      return callableInstance(request);
+    if (key !== undefined) {
+      requestPromiseMap.set(key, retryPromise);
     }
 
-    return axiosInstance.request(request);
+    pendingRequests.push({ request, resolve: resolveFn, reject: rejectFn });
+    return retryPromise;
   };
 
   const resolve = (newToken: string | null, axiosInstance: AxiosInstance): void => {
     const requestsToResolve = [...pendingRequests];
     reset();
 
-    requestsToResolve.forEach(({ request, resolve: resolveRequest }) => {
-      const requestConfig: RetryableRequestConfig = { ...request };
-      applyAuthHeader(requestConfig, newToken, true);
-      resolveRequest(executeRequest(axiosInstance, requestConfig));
+    launchRetries({
+      requests: requestsToResolve,
+      newToken,
+      axiosInstance,
+      maxConcurrentRetries,
+      authHeaderFormatter,
     });
   };
 
@@ -178,10 +168,12 @@ export function createRefreshQueue(
   };
 
   return {
-    applyAuthHeader,
+    applyAuthHeader: (config, token, force) =>
+      applyAuthHeader(config, token, authHeaderFormatter, force),
     enqueue,
     resolve,
     reject,
+    size: () => pendingRequests.length,
     reset,
   };
 }

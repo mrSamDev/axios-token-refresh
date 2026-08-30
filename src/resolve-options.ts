@@ -12,12 +12,15 @@ export interface ResolvedOptions {
 }
 
 interface ResolveInput {
-  refreshTokenFn: () => Promise<string | null>;
+  refreshTokenFn: (signal: AbortSignal) => Promise<string | null>;
   getAuthToken?: () => string | null;
   accessTokenStore?: AccessTokenStore;
   shouldRefreshToken?: RefreshTokenPluginOptions['shouldRefreshToken'];
+  refreshTimeout?: number;
   maxRetryAttempts: number;
   retryDelay: number;
+  maxConcurrentRetries?: number;
+  maxQueueSize?: number;
 }
 
 /**
@@ -33,15 +36,17 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     getAuthToken,
     accessTokenStore,
     shouldRefreshToken,
+    refreshTimeout,
     maxRetryAttempts,
     retryDelay,
+    maxConcurrentRetries,
+    maxQueueSize,
   } = input;
 
   if (typeof refreshTokenFn !== 'function') {
     throw new Error('refreshTokenFn must be a function');
   }
 
-  // Mutual exclusion: getAuthToken vs accessTokenStore
   if (accessTokenStore && getAuthToken !== undefined) {
     throw new Error('Cannot provide both getAuthToken and accessTokenStore. Use one or the other.');
   }
@@ -63,12 +68,27 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     }
   }
 
+  if (refreshTimeout !== undefined && (!Number.isFinite(refreshTimeout) || refreshTimeout <= 0)) {
+    throw new Error('refreshTimeout must be a number greater than 0');
+  }
+
   if (!Number.isInteger(maxRetryAttempts) || maxRetryAttempts < 1) {
     throw new Error('maxRetryAttempts must be an integer greater than or equal to 1');
   }
 
   if (!Number.isFinite(retryDelay) || retryDelay < 0) {
     throw new Error('retryDelay must be a number greater than or equal to 0');
+  }
+
+  if (
+    maxConcurrentRetries !== undefined &&
+    (!Number.isInteger(maxConcurrentRetries) || maxConcurrentRetries < 1)
+  ) {
+    throw new Error('maxConcurrentRetries must be an integer greater than or equal to 1');
+  }
+
+  if (maxQueueSize !== undefined && (!Number.isInteger(maxQueueSize) || maxQueueSize < 1)) {
+    throw new Error('maxQueueSize must be an integer greater than or equal to 1');
   }
 
   // After validation, exactly one of the two is defined.

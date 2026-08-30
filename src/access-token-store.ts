@@ -30,20 +30,45 @@ export interface AccessTokenStore {
   clear?(): void;
 }
 
+type WebStorage = {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => void;
+  removeItem: (key: string) => void;
+};
+
+type WebStorageName = 'localStorage' | 'sessionStorage';
+
+// Read via globalThis so a missing Web Storage surfaces as undefined instead
+// of Node's ReferenceError on the bare lazy global.
+const webStorage = (name: WebStorageName): WebStorage | undefined =>
+  (globalThis as unknown as Record<string, WebStorage | undefined>)[name];
+
+const createWebStorageTokenStore = (name: WebStorageName, key: string): AccessTokenStore => {
+  const getStorage = (): WebStorage => {
+    const storage = webStorage(name);
+    if (!storage) {
+      throw new Error(`${name} is not available in this environment`);
+    }
+    return storage;
+  };
+
+  return {
+    getAccessToken: () => getStorage().getItem(key),
+    setAccessToken: (token) => {
+      getStorage().setItem(key, token);
+    },
+    clear: () => {
+      getStorage().removeItem(key);
+    },
+  };
+};
+
 /** Back an {@link AccessTokenStore} with `localStorage` under `key`. */
 export function createLocalStorageTokenStore(key: string): AccessTokenStore {
-  return {
-    getAccessToken: () => localStorage.getItem(key),
-    setAccessToken: (token) => localStorage.setItem(key, token),
-    clear: () => localStorage.removeItem(key),
-  };
+  return createWebStorageTokenStore('localStorage', key);
 }
 
 /** Back an {@link AccessTokenStore} with `sessionStorage` under `key`. */
 export function createSessionStorageTokenStore(key: string): AccessTokenStore {
-  return {
-    getAccessToken: () => sessionStorage.getItem(key),
-    setAccessToken: (token) => sessionStorage.setItem(key, token),
-    clear: () => sessionStorage.removeItem(key),
-  };
+  return createWebStorageTokenStore('sessionStorage', key);
 }
