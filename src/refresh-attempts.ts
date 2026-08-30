@@ -21,13 +21,18 @@ const createSingleRefreshAttempt = (
   refreshTokenFn: () => Promise<string | null>,
   refreshTimeout: number,
 ): Promise<string | null> => {
+  let timeoutId!: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<string | null>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       reject(new Error('Token refresh timeout'));
     }, refreshTimeout);
   });
 
-  return Promise.race([Promise.resolve().then(refreshTokenFn), timeoutPromise]);
+  return Promise.race([Promise.resolve().then(refreshTokenFn), timeoutPromise]).finally(() => {
+    // A settled attempt leaves a pending timer behind; clear it so it does not
+    // hold the Node event loop open for up to refreshTimeout ms per attempt.
+    clearTimeout(timeoutId);
+  });
 };
 
 /**
