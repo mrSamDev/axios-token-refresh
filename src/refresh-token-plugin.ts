@@ -84,10 +84,10 @@ export function createRefreshTokenPlugin({
           : new Error('Unknown error in refresh token interceptor');
       onStatusChange('error', handledError);
 
+      // Keep isRefreshing/refreshPromise as-is: resetting them here would let
+      // the next 401 start a second refresh while the first still runs.
       if (isRefreshing && refreshPromise) {
         queue.reject(handledError);
-        isRefreshing = false;
-        refreshPromise = null;
       }
 
       return Promise.reject(handledError);

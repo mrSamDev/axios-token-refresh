@@ -725,6 +725,59 @@ describe('createRefreshTokenPlugin', () => {
       });
       expect(mockOnStatusChange).toHaveBeenCalledWith('error', requestKeyError);
     });
+
+    test('interceptor error during active refresh does not start a second refresh', async () => {
+      let resolveRefresh!: (token: string | null) => void;
+      mockRefreshTokenFn.mockImplementation(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
+
+      let shouldExplode = false;
+      const plugin = createRefreshTokenPlugin({
+        refreshTokenFn: mockRefreshTokenFn,
+        getAuthToken: mockGetAuthToken,
+        shouldRefreshToken: () => {
+          if (shouldExplode) {
+            throw new Error('predicate-exploded');
+          }
+          return true;
+        },
+        onStatusChange: mockOnStatusChange,
+      });
+
+      plugin(mockAxios);
+      const responseInterceptor = mockAxios.interceptors.response.use.mock.calls[0][1];
+
+      const makeError = (url: string) => ({
+        response: { status: 401 },
+        config: { method: 'GET', url, headers: {} },
+      });
+
+      const firstHandled = responseInterceptor(makeError('/first')).catch((error) => error);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
+
+      shouldExplode = true;
+      await expect(responseInterceptor(makeError('/second'))).rejects.toMatchObject({
+        message: 'predicate-exploded',
+      });
+      await expect(firstHandled).resolves.toMatchObject({
+        message: 'Token refresh failed',
+        originalError: expect.objectContaining({ message: 'predicate-exploded' }),
+      });
+
+      shouldExplode = false;
+      const thirdHandled = responseInterceptor(makeError('/third')).catch((error) => error);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
+
+      resolveRefresh('race-token');
+      await expect(thirdHandled).resolves.toMatchObject({ data: 'retry-success' });
+      expect(mockOnStatusChange).toHaveBeenCalledWith('success');
+    });
   });
 
   describe('Cleanup', () => {
