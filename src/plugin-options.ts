@@ -46,7 +46,7 @@ export interface RefreshTokenPluginOptions {
   /** Formats the token into the `Authorization` header value. Defaults to `(token) => \`Bearer ${token}\``. */
   authHeaderFormatter?: (token: string) => string;
 
-  /** Dedupe key for queued requests; same key shares one retry. Defaults to `${method}-${url}-${JSON.stringify(params)}`. */
+  /** Dedupe key for queued requests; requests with the same key share one retry. Omit to retry every failed request independently. */
   getRequestKey?: (request: AxiosRequestConfig) => string;
 
   /** Timeout in ms for a single refresh attempt. Defaults to `10000`. */

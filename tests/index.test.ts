@@ -757,7 +757,7 @@ describe('Queue handling', () => {
     mockGetAuthToken.mockReturnValue('current-token');
   });
 
-  test('deduplicates simultaneous requests', async () => {
+  test('retries simultaneous requests independently when no getRequestKey is given', async () => {
     const plugin = createRefreshTokenPlugin({
       refreshTokenFn: mockRefreshTokenFn,
       getAuthToken: mockGetAuthToken,
@@ -775,14 +775,44 @@ describe('Queue handling', () => {
       config: { method: 'GET', url: '/same' },
     };
 
-    const p1 = responseInterceptor(error1);
-    const p2 = responseInterceptor(error2);
+    const [result1, result2] = await Promise.all([
+      responseInterceptor(error1),
+      responseInterceptor(error2),
+    ]);
 
-    const [result1, result2] = await Promise.all([p1, p2]);
-
-    expect(result1).toStrictEqual(result2);
+    expect(result1).toStrictEqual({ data: 'retry-success' });
+    expect(result2).toStrictEqual({ data: 'retry-success' });
     expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
-    expect(mockAxios).toHaveBeenCalledTimes(1);
+    expect(mockAxios).toHaveBeenCalledTimes(2);
+  });
+
+  test('retries same-key requests with different bodies independently (regression)', async () => {
+    const plugin = createRefreshTokenPlugin({
+      refreshTokenFn: mockRefreshTokenFn,
+      getAuthToken: mockGetAuthToken,
+    });
+
+    plugin(mockAxios);
+    const [, responseInterceptor] = mockAxios.interceptors.response.use.mock.calls[0];
+
+    const error1 = {
+      response: { status: 401 },
+      config: { method: 'POST', url: '/submit', data: { payload: 1 } },
+    };
+    const error2 = {
+      response: { status: 401 },
+      config: { method: 'POST', url: '/submit', data: { payload: 2 } },
+    };
+
+    const [result1, result2] = await Promise.all([
+      responseInterceptor(error1),
+      responseInterceptor(error2),
+    ]);
+
+    expect(result1).toStrictEqual({ data: 'retry-success' });
+    expect(result2).toStrictEqual({ data: 'retry-success' });
+    expect(mockRefreshTokenFn).toHaveBeenCalledTimes(1);
+    expect(mockAxios).toHaveBeenCalledTimes(2);
   });
 
   test('resolves queued requests with new token', async () => {

@@ -31,7 +31,6 @@ export type RetryableRequestConfig = InternalAxiosRequestConfig & {
 
 type QueueItem = {
   request: RetryableRequestConfig;
-  requestKey: string;
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
 };
@@ -52,8 +51,11 @@ export interface RefreshQueue {
     force?: boolean,
   ) => RetryableRequestConfig;
   /**
-   * Add a request to the queue. If a request with the same key is already
-   * pending, the existing promise is returned instead of enqueuing a duplicate.
+   * Add a request to the queue. Dedupe only happens when the queue was
+   * created with a `getRequestKey`: requests sharing a key share one retry
+   * promise. Without `getRequestKey` every request gets its own retry — two
+   * identical-looking requests are still distinct calls expecting distinct
+   * responses.
    *
    * @param request The failed request to retry after refresh.
    * @returns A promise that resolves with the retried response or rejects on failure.
@@ -77,18 +79,13 @@ export interface RefreshQueue {
   reset: () => void;
 }
 
-const getDefaultRequestKey = (config?: RetryableRequestConfig): string => {
-  const method = (config?.method || 'get').toLowerCase();
-  const url = config?.url || '';
-  const params = JSON.stringify(config?.params || {});
-  return `${method}-${url}-${params}`;
-};
-
 /**
  * Create a request queue that holds pending requests during a token refresh.
  *
  * @param authHeaderFormatter Transforms a token into the `Authorization` header value.
- * @param getRequestKey Optional custom dedupe key generator. Defaults to `method-url-params`.
+ * @param getRequestKey Optional dedupe key generator. When provided, requests
+ *   with the same key share one retry. Omit it to retry every failed request
+ *   independently.
  * @returns A {@link RefreshQueue} instance.
  */
 export function createRefreshQueue(
@@ -120,11 +117,13 @@ export function createRefreshQueue(
   };
 
   const enqueue = (request: RetryableRequestConfig): Promise<unknown> => {
-    const configuredRequestKey = getRequestKey?.(request);
-    const requestKey = configuredRequestKey || getDefaultRequestKey(request);
-    const existing = requestPromiseMap.get(requestKey);
-    if (existing) {
-      return existing;
+    const requestKey = getRequestKey?.(request);
+
+    if (requestKey !== undefined) {
+      const existing = requestPromiseMap.get(requestKey);
+      if (existing) {
+        return existing;
+      }
     }
 
     let resolveFn!: (value: unknown) => void;
@@ -134,8 +133,11 @@ export function createRefreshQueue(
       rejectFn = reject;
     });
 
-    pendingRequests.push({ request, requestKey, resolve: resolveFn, reject: rejectFn });
-    requestPromiseMap.set(requestKey, retryPromise);
+    if (requestKey !== undefined) {
+      requestPromiseMap.set(requestKey, retryPromise);
+    }
+
+    pendingRequests.push({ request, resolve: resolveFn, reject: rejectFn });
     return retryPromise;
   };
 

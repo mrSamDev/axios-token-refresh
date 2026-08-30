@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { createRefreshQueue, type RetryableRequestConfig } from '../src/refresh-queue';
 
 describe('refresh queue internals', () => {
-  test('uses default request key when method and url are missing', async () => {
+  test('does not dedupe when getRequestKey is not provided', () => {
     const queue = createRefreshQueue((token) => `Bearer ${token}`);
     const request = {
       headers: {},
@@ -13,6 +13,42 @@ describe('refresh queue internals', () => {
     const second = queue.enqueue({
       headers: {},
     } as RetryableRequestConfig);
+
+    expect(first).not.toBe(second);
+  });
+
+  test('dedupes when getRequestKey returns the same key', () => {
+    const queue = createRefreshQueue(
+      (token) => `Bearer ${token}`,
+      () => 'same-key',
+    );
+    const request = {
+      method: 'GET',
+      url: '/dedupe',
+      headers: {},
+    } as RetryableRequestConfig;
+
+    const first = queue.enqueue(request);
+    const second = queue.enqueue({
+      method: 'GET',
+      url: '/other',
+      headers: {},
+    } as RetryableRequestConfig);
+
+    expect(first).toBe(second);
+  });
+
+  test('respects empty-string key from getRequestKey', () => {
+    const queue = createRefreshQueue(
+      (token) => `Bearer ${token}`,
+      () => '',
+    );
+    const request = {
+      headers: {},
+    } as RetryableRequestConfig;
+
+    const first = queue.enqueue(request);
+    const second = queue.enqueue({ headers: {} } as RetryableRequestConfig);
 
     expect(first).toBe(second);
   });
@@ -47,7 +83,10 @@ describe('refresh queue internals', () => {
   });
 
   test('reset clears queued request dedupe map', () => {
-    const queue = createRefreshQueue((token) => `Bearer ${token}`);
+    const queue = createRefreshQueue(
+      (token) => `Bearer ${token}`,
+      () => 'same-key',
+    );
     const request = {
       method: 'GET',
       url: '/reset',
