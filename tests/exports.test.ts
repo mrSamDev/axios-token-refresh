@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'vitest';
-
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { describe, expect, test } from 'vitest';
 
 import {
   createLocalStorageTokenStore,
@@ -17,11 +17,7 @@ import {
 
 describe('public API surface', () => {
   test('declares a peer dependency range the code actually supports', () => {
-    const packageJsonPath = join(
-      dirname(fileURLToPath(import.meta.url)),
-      '..',
-      'package.json',
-    );
+    const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
     const { peerDependencies } = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 
     // The source imports InternalAxiosRequestConfig, which exists only in
