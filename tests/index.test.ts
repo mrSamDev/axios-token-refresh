@@ -147,6 +147,36 @@ describe('createRefreshTokenPlugin', () => {
         });
       }).toThrow('maxConcurrentRetries must be an integer greater than or equal to 1');
     });
+
+    test('should throw error for zero refreshTimeout', () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          refreshTimeout: 0,
+        });
+      }).toThrow('refreshTimeout must be a number greater than 0');
+    });
+
+    test('should throw error for negative refreshTimeout', () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          refreshTimeout: -5,
+        });
+      }).toThrow('refreshTimeout must be a number greater than 0');
+    });
+
+    test('should throw error for NaN refreshTimeout', () => {
+      expect(() => {
+        createRefreshTokenPlugin({
+          refreshTokenFn: mockRefreshTokenFn,
+          getAuthToken: mockGetAuthToken,
+          refreshTimeout: Number.NaN,
+        });
+      }).toThrow('refreshTimeout must be a number greater than 0');
+    });
   });
 
   describe('Request Interceptor', () => {

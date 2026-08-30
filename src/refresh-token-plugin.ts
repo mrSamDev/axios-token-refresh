@@ -66,6 +66,7 @@ export function createRefreshTokenPlugin({
     getAuthToken,
     accessTokenStore,
     shouldRefreshToken,
+    refreshTimeout,
     maxRetryAttempts,
     retryDelay,
     maxConcurrentRetries,

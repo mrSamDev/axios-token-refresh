@@ -16,6 +16,7 @@ interface ResolveInput {
   getAuthToken?: () => string | null;
   accessTokenStore?: AccessTokenStore;
   shouldRefreshToken?: RefreshTokenPluginOptions['shouldRefreshToken'];
+  refreshTimeout?: number;
   maxRetryAttempts: number;
   retryDelay: number;
   maxConcurrentRetries?: number;
@@ -34,6 +35,7 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     getAuthToken,
     accessTokenStore,
     shouldRefreshToken,
+    refreshTimeout,
     maxRetryAttempts,
     retryDelay,
     maxConcurrentRetries,
@@ -63,6 +65,10 @@ export function resolvePluginOptions(input: ResolveInput): ResolvedOptions {
     if (typeof accessTokenStore.setAccessToken !== 'function') {
       throw new Error('accessTokenStore.setAccessToken must be a function');
     }
+  }
+
+  if (refreshTimeout !== undefined && (!Number.isFinite(refreshTimeout) || refreshTimeout <= 0)) {
+    throw new Error('refreshTimeout must be a number greater than 0');
   }
 
   if (!Number.isInteger(maxRetryAttempts) || maxRetryAttempts < 1) {
