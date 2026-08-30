@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import {
   createLocalStorageTokenStore,
   createRefreshTokenPlugin,
@@ -12,6 +16,19 @@ import {
 } from '../src/index';
 
 describe('public API surface', () => {
+  test('declares a peer dependency range the code actually supports', () => {
+    const packageJsonPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'package.json',
+    );
+    const { peerDependencies } = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+
+    // The source imports InternalAxiosRequestConfig, which exists only in
+    // axios v1; a range below 1.0.0 promises types we cannot deliver.
+    expect(peerDependencies.axios).toBe('>=1.0.0');
+  });
+
   test('exports runtime values', () => {
     expect(typeof createRefreshTokenPlugin).toBe('function');
     expect(typeof createLocalStorageTokenStore).toBe('function');
