@@ -13,6 +13,7 @@
 import type { AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
 import { applyAuthHeader } from './auth-header';
+import { launchRetries, type QueuedRequest } from './retry-launcher';
 
 export type RefreshFailedError = Error & {
   originalError?: Error;
@@ -32,11 +33,7 @@ export type RetryableRequestConfig = InternalAxiosRequestConfig & {
   skipAuthRefresh?: boolean;
 };
 
-type QueueItem = {
-  request: RetryableRequestConfig;
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-};
+type QueueItem = QueuedRequest;
 
 /** The public surface returned by {@link createRefreshQueue}. */
 export interface RefreshQueue {
@@ -133,63 +130,17 @@ export function createRefreshQueue(
     return retryPromise;
   };
 
-  const executeRequest = (
-    axiosInstance: AxiosInstance,
-    request: RetryableRequestConfig,
-  ): Promise<unknown> => {
-    const callableInstance = axiosInstance as unknown as (
-      config: RetryableRequestConfig,
-    ) => Promise<unknown>;
-
-    if (typeof callableInstance === 'function') {
-      return callableInstance(request);
-    }
-
-    return axiosInstance.request(request);
-  };
-
   const resolve = (newToken: string | null, axiosInstance: AxiosInstance): void => {
     const requestsToResolve = [...pendingRequests];
     reset();
 
-    let cursor = 0;
-    let inFlight = 0;
-
-    const launchNext = (): void => {
-      while (inFlight < maxConcurrentRetries && cursor < requestsToResolve.length) {
-        const {
-          request,
-          resolve: resolveRequest,
-          reject: rejectRequest,
-        } = requestsToResolve[cursor];
-        cursor += 1;
-
-        let attempt: Promise<unknown>;
-        try {
-          const requestConfig: RetryableRequestConfig = { ...request };
-          applyAuthHeader(requestConfig, newToken, authHeaderFormatter, true);
-          attempt = executeRequest(axiosInstance, requestConfig);
-        } catch (setupError) {
-          // Formatter or instance setup threw: fail this request only, keep
-          // draining the rest.
-          rejectRequest(setupError);
-          continue;
-        }
-
-        inFlight += 1;
-        resolveRequest(attempt);
-        Promise.resolve(attempt)
-          .finally(() => {
-            inFlight -= 1;
-            launchNext();
-          })
-          // The queued caller receives the attempt's own rejection; this
-          // chain only tracks concurrency slots.
-          .catch(() => {});
-      }
-    };
-
-    launchNext();
+    launchRetries({
+      requests: requestsToResolve,
+      newToken,
+      axiosInstance,
+      maxConcurrentRetries,
+      authHeaderFormatter,
+    });
   };
 
   const reject = (refreshError: unknown): void => {

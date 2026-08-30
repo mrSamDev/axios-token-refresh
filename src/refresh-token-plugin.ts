@@ -5,6 +5,7 @@ import { createRefreshPromise } from './refresh-attempts';
 import { dispatchRefreshOutcome } from './refresh-outcome';
 import { createRefreshQueue, type RetryableRequestConfig } from './refresh-queue';
 import { resolvePluginOptions } from './resolve-options';
+import { createTokenInjector } from './token-injector';
 import { tryCatch } from './try-catch';
 
 /**
@@ -14,7 +15,7 @@ import { tryCatch } from './try-catch';
  * returns `true`, the failed request is queued, a refresh is initiated (if not
  * already in progress), and all queued requests are retried with the new token
  * once the refresh succeeds. Concurrent failures during a refresh share the
- * same refresh promise and are deduplicated by request key.
+ * same refresh promise.
  *
  * @param options Configuration for the plugin. See {@link RefreshTokenPluginOptions}.
  * @returns A function that, when called with an Axios instance, installs the
@@ -25,28 +26,7 @@ import { tryCatch } from './try-catch';
  *   never affects another. Install on multiple instances only with a
  *   rotation-safe `refreshTokenFn` (each install may refresh concurrently).
  *
- * @example
- * ```ts
- * import axios from "axios";
- * import { createRefreshTokenPlugin } from "@mrsamdev/axios-token-refresh";
- *
- * const api = axios.create({ baseURL: "https://api.example.com" });
- *
- * const plugin = createRefreshTokenPlugin({
- *   refreshTokenFn: async () => {
- *     const res = await axios.post("/refresh", {
- *       refresh_token: localStorage.getItem("refreshToken"),
- *     });
- *     return res.data.access_token as string;
- *   },
- *   getAuthToken: () => localStorage.getItem("token"),
- * });
- *
- * const cleanup = plugin(api);
- *
- * // Later, to remove the interceptors:
- * cleanup();
- * ```
+ * Usage examples live in the README.
  */
 export function createRefreshTokenPlugin({
   refreshTokenFn,
@@ -105,16 +85,7 @@ export function createRefreshTokenPlugin({
 
     const requestInterceptorId = autoInjectToken
       ? axios.interceptors.request.use(
-          (config) => {
-            const token = tokenGetter();
-            if (token) {
-              const headers = (config.headers ??= {} as typeof config.headers);
-              if (!headers.Authorization) {
-                headers.Authorization = authHeaderFormatter(token);
-              }
-            }
-            return config;
-          },
+          createTokenInjector(tokenGetter, authHeaderFormatter),
           (error) => Promise.reject(error),
         )
       : null;
